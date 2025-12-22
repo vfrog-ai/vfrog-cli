@@ -13,13 +13,13 @@ import (
 
 // SSATClient represents a client for SSAT operations via the API project
 type SSATClient struct {
-	baseURL    string
-	apiKey     string
-	httpClient *http.Client
+	baseURL     string
+	accessToken string
+	httpClient  *http.Client
 }
 
-// NewSSATClient creates a new SSAT client
-func NewSSATClient(cfg *config.Config, apiKey string) (*SSATClient, error) {
+// NewSSATClient creates a new SSAT client using access token
+func NewSSATClient(cfg *config.Config, accessToken string) (*SSATClient, error) {
 	apiURL := cfg.APIURL
 	if apiURL == "" {
 		apiURL = cfg.APIProjectBaseURL
@@ -28,14 +28,14 @@ func NewSSATClient(cfg *config.Config, apiKey string) (*SSATClient, error) {
 		return nil, fmt.Errorf("API URL not configured")
 	}
 
-	if apiKey == "" {
-		return nil, fmt.Errorf("API key is required")
+	if accessToken == "" {
+		return nil, fmt.Errorf("access token is required")
 	}
 
 	return &SSATClient{
-		baseURL:    apiURL,
-		apiKey:     apiKey,
-		httpClient: &http.Client{Timeout: 5 * time.Minute},
+		baseURL:     apiURL,
+		accessToken: accessToken,
+		httpClient:  &http.Client{Timeout: 5 * time.Minute},
 	}, nil
 }
 
@@ -75,7 +75,7 @@ func (c *SSATClient) BatchSubmit(params BatchSubmitParams) (map[string]interface
 	}
 
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("x-api-key", c.apiKey)
+	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", c.accessToken))
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
@@ -137,7 +137,7 @@ func (c *SSATClient) RunInference(params RunInferenceParams) (map[string]interfa
 	}
 
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("x-api-key", c.apiKey)
+	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", c.accessToken))
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
@@ -188,7 +188,97 @@ func (c *SSATClient) Train(params TrainParams) (map[string]interface{}, error) {
 	}
 
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("x-api-key", c.apiKey)
+	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", c.accessToken))
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to send request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read response: %w", err)
+	}
+
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return nil, fmt.Errorf("request failed (status %d): %s", resp.StatusCode, string(body))
+	}
+
+	var result map[string]interface{}
+	if err := json.Unmarshal(body, &result); err != nil {
+		return nil, fmt.Errorf("failed to parse response: %w", err)
+	}
+
+	return result, nil
+}
+
+// NextIterationParams represents the parameters for creating next iteration
+type NextIterationParams struct {
+	IterationID string `json:"iteration_id"`
+}
+
+// NextIteration creates the next iteration via the API project
+func (c *SSATClient) NextIteration(params NextIterationParams) (map[string]interface{}, error) {
+	url := fmt.Sprintf("%s/api/v1/iterations/next", c.baseURL)
+
+	jsonData, err := json.Marshal(params)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal payload: %w", err)
+	}
+
+	req, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonData))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", c.accessToken))
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to send request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read response: %w", err)
+	}
+
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return nil, fmt.Errorf("request failed (status %d): %s", resp.StatusCode, string(body))
+	}
+
+	var result map[string]interface{}
+	if err := json.Unmarshal(body, &result); err != nil {
+		return nil, fmt.Errorf("failed to parse response: %w", err)
+	}
+
+	return result, nil
+}
+
+// RestartIterationParams represents the parameters for restarting an iteration
+type RestartIterationParams struct {
+	IterationID string `json:"iteration_id"`
+}
+
+// RestartIteration restarts an iteration via the API project
+func (c *SSATClient) RestartIteration(params RestartIterationParams) (map[string]interface{}, error) {
+	url := fmt.Sprintf("%s/api/v1/iterations/restart", c.baseURL)
+
+	jsonData, err := json.Marshal(params)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal payload: %w", err)
+	}
+
+	req, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonData))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", c.accessToken))
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {

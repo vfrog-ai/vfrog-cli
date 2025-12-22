@@ -62,6 +62,7 @@ var configShowCmd = &cobra.Command{
 			"environment":     env,
 			"organisation_id": cfg.OrganisationID,
 			"project_id":      cfg.ProjectID,
+			"object_id":       cfg.ObjectID,
 			"supabase_url":    cfg.SupabaseURL,
 			"api_url":         cfg.APIURL,
 			"inference_url":   cfg.InferenceURL,
@@ -77,6 +78,7 @@ var configShowCmd = &cobra.Command{
 		fmt.Printf("Environment:     %s\n", env)
 		fmt.Printf("Organisation ID: %s\n", cfg.OrganisationID)
 		fmt.Printf("Project ID:      %s\n", cfg.ProjectID)
+		fmt.Printf("Object ID:       %s\n", cfg.ObjectID)
 		fmt.Printf("Supabase URL:    %s\n", cfg.SupabaseURL)
 		fmt.Printf("API URL:         %s\n", cfg.APIURL)
 		fmt.Printf("Inference URL:   %s\n", cfg.InferenceURL)
@@ -223,13 +225,84 @@ var configSetProjectCmd = &cobra.Command{
 	},
 }
 
+// configSetObjectCmd represents the config set object command
+var configSetObjectCmd = &cobra.Command{
+	Use:   "object",
+	Short: "Set the default object (product image) ID",
+	Long:  `Set the default object ID for subsequent commands. Requires project_id to be set first.`,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		objectID, _ := cmd.Flags().GetString("object_id")
+		if objectID == "" {
+			return fmt.Errorf("object_id is required")
+		}
+
+		// Validate UUID format
+		if err := validateUUID(objectID); err != nil {
+			return err
+		}
+
+		cfg, err := config.Load()
+		if err != nil {
+			return fmt.Errorf("failed to load config: %w", err)
+		}
+
+		if err := cfg.RequireProjectID(); err != nil {
+			return err
+		}
+
+		// Verify object exists in the current project
+		client, err := supabase.NewClient(cfg)
+		if err != nil {
+			return fmt.Errorf("failed to create Supabase client: %w", err)
+		}
+
+		objects, err := client.Get("product_images", map[string]string{
+			"id":         fmt.Sprintf("eq.%s", objectID),
+			"project_id": fmt.Sprintf("eq.%s", cfg.ProjectID),
+			"select":     "id,label,filename",
+		})
+		if err != nil {
+			return fmt.Errorf("failed to verify object: %w", err)
+		}
+
+		if len(objects) == 0 {
+			return fmt.Errorf("object not found in current project: %s", objectID)
+		}
+
+		// Get the object label for confirmation
+		var objectLabel string
+		if label, ok := objects[0]["label"].(string); ok && label != "" {
+			objectLabel = label
+		} else if filename, ok := objects[0]["filename"].(string); ok {
+			objectLabel = filename
+		}
+
+		if err := cfg.SetObjectID(objectID); err != nil {
+			return fmt.Errorf("failed to set object_id: %w", err)
+		}
+
+		if jsonOutput {
+			return output.PrintJSON(map[string]string{
+				"object_id":    objectID,
+				"object_label": objectLabel,
+				"status":       "success",
+			})
+		}
+
+		output.PrintSuccess(fmt.Sprintf("Set object to: %s (%s)", objectLabel, objectID))
+		return nil
+	},
+}
+
 func init() {
 	rootCmd.AddCommand(configCmd)
 	configCmd.AddCommand(configSetCmd)
 	configCmd.AddCommand(configShowCmd)
 	configSetCmd.AddCommand(configSetOrganisationCmd)
 	configSetCmd.AddCommand(configSetProjectCmd)
+	configSetCmd.AddCommand(configSetObjectCmd)
 
 	configSetOrganisationCmd.Flags().String("organisation_id", "", "Organisation ID")
 	configSetProjectCmd.Flags().String("project_id", "", "Project ID")
+	configSetObjectCmd.Flags().String("object_id", "", "Object (product image) ID")
 }

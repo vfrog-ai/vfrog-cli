@@ -43,6 +43,7 @@ type Config struct {
 	SupabasePublishableKey string `json:"supabase_publishable_key,omitempty"`
 	OrganisationID         string `json:"organisation_id,omitempty"`
 	ProjectID              string `json:"project_id,omitempty"`
+	ObjectID               string `json:"object_id,omitempty"`
 	APIURL                 string `json:"api_url,omitempty"`
 	InferenceURL           string `json:"inference_url,omitempty"`
 	InferenceAPIKey        string `json:"inference_api_key,omitempty"`
@@ -154,9 +155,22 @@ func (c *Config) SetOrganisationID(orgID string) error {
 	return Save(c)
 }
 
-// SetProjectID sets the project ID
+// SetProjectID sets the project ID and clears object_id if project changes
 func (c *Config) SetProjectID(projectID string) error {
+	oldProjectID := c.ProjectID
 	c.ProjectID = projectID
+
+	// If project changed, clear object_id
+	if oldProjectID != "" && oldProjectID != projectID {
+		c.ObjectID = ""
+	}
+
+	return Save(c)
+}
+
+// SetObjectID sets the object (product image) ID
+func (c *Config) SetObjectID(objectID string) error {
+	c.ObjectID = objectID
 	return Save(c)
 }
 
@@ -175,6 +189,17 @@ func (c *Config) RequireProjectID() error {
 	}
 	if c.ProjectID == "" {
 		return fmt.Errorf("project_id is required. Run: vfrog config set project --project_id <id>")
+	}
+	return nil
+}
+
+// RequireObjectID returns an error if object_id is not set
+func (c *Config) RequireObjectID() error {
+	if err := c.RequireProjectID(); err != nil {
+		return err
+	}
+	if c.ObjectID == "" {
+		return fmt.Errorf("object_id is required. Run: vfrog config set object --object_id <id>")
 	}
 	return nil
 }

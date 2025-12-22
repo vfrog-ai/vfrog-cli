@@ -133,17 +133,39 @@ var objectsListCmd = &cobra.Command{
 		}
 
 		if jsonOutput {
+			// Add selected flag to JSON output
+			for i := range objects {
+				if id, ok := objects[i]["id"].(string); ok && id == cfg.ObjectID {
+					objects[i]["selected"] = true
+				} else {
+					objects[i]["selected"] = false
+				}
+			}
 			return output.PrintJSON(objects)
 		}
 
-		fmt.Println("Objects:")
-		for _, obj := range objects {
-			name := obj["filename"]
-			if label, ok := obj["label"].(string); ok && label != "" {
-				name = label
-			}
-			fmt.Printf("  - %s (ID: %v)\n", name, obj["id"])
+		if len(objects) == 0 {
+			fmt.Println("No objects found.")
+			return nil
 		}
+
+		table := output.NewTable("LABEL", "ID", "EXTERNAL_ID")
+		for _, obj := range objects {
+			label := ""
+			if l, ok := obj["label"].(string); ok && l != "" {
+				label = l
+			} else if f, ok := obj["filename"].(string); ok {
+				label = f
+			}
+			id := fmt.Sprintf("%v", obj["id"])
+			externalID := "-"
+			if eid, ok := obj["external_id"].(string); ok && eid != "" {
+				externalID = eid
+			}
+			selected := id == cfg.ObjectID
+			table.AddRowWithMarker(selected, label, id, externalID)
+		}
+		table.Print()
 
 		return nil
 	},

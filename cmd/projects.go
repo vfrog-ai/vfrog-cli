@@ -58,15 +58,19 @@ var projectsListCmd = &cobra.Command{
 			return output.PrintJSON(projects)
 		}
 
-		fmt.Println("Projects:")
-		for _, p := range projects {
-			id := p["id"].(string)
-			marker := "  "
-			if id == cfg.ProjectID {
-				marker = "✓ "
-			}
-			fmt.Printf("  %s%s (ID: %s)\n", marker, p["title"], id)
+		if len(projects) == 0 {
+			fmt.Println("No projects found.")
+			return nil
 		}
+
+		table := output.NewTable("TITLE", "ID")
+		for _, p := range projects {
+			title := fmt.Sprintf("%v", p["title"])
+			id := p["id"].(string)
+			selected := id == cfg.ProjectID
+			table.AddRowWithMarker(selected, title, id)
+		}
+		table.Print()
 
 		return nil
 	},

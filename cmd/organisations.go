@@ -83,20 +83,23 @@ var organisationsListCmd = &cobra.Command{
 			return output.PrintJSON(uniqueOrgs)
 		}
 
-		fmt.Println("Organisations:")
-		for _, org := range uniqueOrgs {
-			name := org["name"]
-			id := org["id"].(string)
-			planType := org["plan_type"]
-			if planType == nil {
-				planType = "-"
-			}
-			marker := "  "
-			if id == cfg.OrganisationID {
-				marker = "✓ "
-			}
-			fmt.Printf("  %s%s (ID: %s, Plan: %v)\n", marker, name, id, planType)
+		if len(uniqueOrgs) == 0 {
+			fmt.Println("No organisations found.")
+			return nil
 		}
+
+		table := output.NewTable("NAME", "ID", "PLAN")
+		for _, org := range uniqueOrgs {
+			name := fmt.Sprintf("%v", org["name"])
+			id := org["id"].(string)
+			planType := "-"
+			if pt := org["plan_type"]; pt != nil {
+				planType = fmt.Sprintf("%v", pt)
+			}
+			selected := id == cfg.OrganisationID
+			table.AddRowWithMarker(selected, name, id, planType)
+		}
+		table.Print()
 
 		return nil
 	},

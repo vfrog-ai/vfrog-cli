@@ -3,13 +3,13 @@ package cmd
 import (
 	"fmt"
 	"math/rand"
-	"os"
 	"time"
 
 	"github.com/spf13/cobra"
 
 	"github.com/vfrog/vfrog-cli/internal/api/supabase"
 	"github.com/vfrog/vfrog-cli/internal/api/vfrogapi"
+	"github.com/vfrog/vfrog-cli/internal/auth"
 	"github.com/vfrog/vfrog-cli/internal/config"
 	"github.com/vfrog/vfrog-cli/internal/output"
 )
@@ -23,15 +23,11 @@ var iterationsCmd = &cobra.Command{
 
 // iterationsListCmd represents the iterations list command
 var iterationsListCmd = &cobra.Command{
-	Use:   "list",
-	Short: "List iterations",
-	Long:  `List all iterations for a specific object (product image).`,
+	Use:     "list",
+	Aliases: []string{"ls"},
+	Short:   "List iterations",
+	Long:    `List all iterations for the configured object (product image). Use --object_id to override.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		objectID, _ := cmd.Flags().GetString("object_id")
-		if objectID == "" {
-			return fmt.Errorf("object_id is required")
-		}
-
 		cfg, err := config.Load()
 		if err != nil {
 			return fmt.Errorf("failed to load config: %w", err)
@@ -39,6 +35,15 @@ var iterationsListCmd = &cobra.Command{
 
 		if err := cfg.RequireProjectID(); err != nil {
 			return err
+		}
+
+		// Use flag or config
+		objectID, _ := cmd.Flags().GetString("object_id")
+		if objectID == "" {
+			objectID = cfg.ObjectID
+		}
+		if objectID == "" {
+			return fmt.Errorf("object_id is required. Set it with: vfrog config set object --object_id <id>")
 		}
 
 		client, err := supabase.NewClient(cfg)
@@ -49,7 +54,7 @@ var iterationsListCmd = &cobra.Command{
 		iterations, err := client.Get("project_iteration", map[string]string{
 			"product_image_id": fmt.Sprintf("eq.%s", objectID),
 			"select":           "id,iteration_number,status,trained_status,created_at",
-			"order":            "iteration_number.desc",
+			"order":            "iteration_number.asc",
 		})
 		if err != nil {
 			return fmt.Errorf("failed to list iterations: %w", err)
@@ -59,10 +64,23 @@ var iterationsListCmd = &cobra.Command{
 			return output.PrintJSON(iterations)
 		}
 
-		fmt.Println("Iterations:")
-		for _, iter := range iterations {
-			fmt.Printf("  - Iteration #%v (ID: %v, Status: %v)\n", iter["iteration_number"], iter["id"], iter["status"])
+		if len(iterations) == 0 {
+			fmt.Println("No iterations found.")
+			return nil
 		}
+
+		table := output.NewTable("ITERATION", "ID", "STATUS", "TRAINED")
+		for _, iter := range iterations {
+			iterNum := fmt.Sprintf("#%v", iter["iteration_number"])
+			id := fmt.Sprintf("%v", iter["id"])
+			status := fmt.Sprintf("%v", iter["status"])
+			trainedStatus := "-"
+			if ts, ok := iter["trained_status"].(string); ok && ts != "" {
+				trainedStatus = ts
+			}
+			table.AddRow(iterNum, id, status, trainedStatus)
+		}
+		table.Print()
 
 		return nil
 	},
@@ -408,10 +426,10 @@ var iterationTrainCmd = &cobra.Command{
 			return err
 		}
 
-		// Get API key
-		apiKey := getAPIKey(cfg)
-		if apiKey == "" {
-			return fmt.Errorf("API key is required. Set VFROG_API_KEY env var or use 'vfrog config set api_key'")
+		// Get access token (requires login)
+		accessToken, err := getAccessToken(cfg)
+		if err != nil {
+			return fmt.Errorf("authentication required: %w. Run 'vfrog login' first", err)
 		}
 
 		client, err := supabase.NewClient(cfg)
@@ -508,8 +526,14 @@ var iterationTrainCmd = &cobra.Command{
 			callbackURL = fmt.Sprintf("%s/api/v1/callback/project-status-update", cfg.APIProjectBaseURL)
 		}
 
+		// Get access token (requires login)
+		accessToken, authErr := getAccessToken(cfg)
+		if authErr != nil {
+			return fmt.Errorf("authentication required: %w. Run 'vfrog login' first", authErr)
+		}
+
 		// Create API client
-		ssatClient, err := vfrogapi.NewSSATClient(cfg, apiKey)
+		ssatClient, err := vfrogapi.NewSSATClient(cfg, accessToken)
 		if err != nil {
 			return fmt.Errorf("failed to create API client: %w", err)
 		}
@@ -549,26 +573,17 @@ var iterationTrainCmd = &cobra.Command{
 	},
 }
 
-// getAPIKey gets the API key from flag, env var, or config
-func getAPIKey(cfg *config.Config) string {
-	// Check flag (set by parent command)
-	apiKey := os.Getenv("VFROG_API_KEY")
-	if apiKey != "" {
-		return apiKey
-	}
-	// Check config
-	if cfg.APIKey != "" {
-		return cfg.APIKey
-	}
-	return ""
+// getAccessToken gets the access token from auth (requires login)
+func getAccessToken(cfg *config.Config) (string, error) {
+	return auth.GetValidToken(cfg)
 }
 
 // runAnnotatorSSAT runs SSAT using the API project (for iteration 1)
 func runAnnotatorSSAT(cmd *cobra.Command, cfg *config.Config, client *supabase.Client, iterationID, productImageID string, datasetImageLinks []map[string]interface{}, callbackURL string) error {
-	// Get API key
-	apiKey := getAPIKey(cfg)
-	if apiKey == "" {
-		return fmt.Errorf("API key is required. Set VFROG_API_KEY env var or use 'vfrog config set api_key'")
+	// Get access token (requires login)
+	accessToken, err := getAccessToken(cfg)
+	if err != nil {
+		return fmt.Errorf("authentication required: %w. Run 'vfrog login' first", err)
 	}
 
 	// Get product image details
@@ -624,7 +639,7 @@ func runAnnotatorSSAT(cmd *cobra.Command, cfg *config.Config, client *supabase.C
 	}
 
 	// Create API client
-	ssatClient, err := vfrogapi.NewSSATClient(cfg, apiKey)
+	ssatClient, err := vfrogapi.NewSSATClient(cfg, accessToken)
 	if err != nil {
 		return fmt.Errorf("failed to create API client: %w", err)
 	}
@@ -668,10 +683,10 @@ func runAnnotatorSSAT(cmd *cobra.Command, cfg *config.Config, client *supabase.C
 
 // runInferenceSSAT runs SSAT using the API project (for iteration 2+)
 func runInferenceSSAT(cmd *cobra.Command, cfg *config.Config, client *supabase.Client, iterationID, modelID string, datasetImageLinks []map[string]interface{}, callbackURL string) error {
-	// Get API key
-	apiKey := getAPIKey(cfg)
-	if apiKey == "" {
-		return fmt.Errorf("API key is required. Set VFROG_API_KEY env var or use 'vfrog config set api_key'")
+	// Get access token (requires login)
+	accessToken, err := getAccessToken(cfg)
+	if err != nil {
+		return fmt.Errorf("authentication required: %w. Run 'vfrog login' first", err)
 	}
 
 	// Get model details
@@ -755,7 +770,7 @@ func runInferenceSSAT(cmd *cobra.Command, cfg *config.Config, client *supabase.C
 	}
 
 	// Create API client
-	ssatClient, err := vfrogapi.NewSSATClient(cfg, apiKey)
+	ssatClient, err := vfrogapi.NewSSATClient(cfg, accessToken)
 	if err != nil {
 		return fmt.Errorf("failed to create API client: %w", err)
 	}
@@ -801,19 +816,117 @@ func runInferenceSSAT(cmd *cobra.Command, cfg *config.Config, client *supabase.C
 	return nil
 }
 
-// Helper functions for parsing map values
-func getFloat(m map[string]interface{}, key string) float64 {
-	if v, ok := m[key].(float64); ok {
-		return v
-	}
-	return 0
+// iterationsNextCmd represents the iterations next command
+var iterationsNextCmd = &cobra.Command{
+	Use:   "next",
+	Short: "Create the next iteration from the current one",
+	Long: `Create the next iteration from the current iteration via the API project.
+
+The given iteration must be the latest for this object. For iteration 2+,
+the current iteration must have a trained model (model_id).
+
+The new iteration will have:
+- iteration_number = current + 1
+- ssat_model_id = current iteration's model_id (for SSAT inference)`,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		iterationID, _ := cmd.Flags().GetString("iteration_id")
+		if iterationID == "" {
+			return fmt.Errorf("iteration_id is required")
+		}
+
+		cfg, err := config.Load()
+		if err != nil {
+			return fmt.Errorf("failed to load config: %w", err)
+		}
+
+		// Get API key
+		// Get access token (requires login)
+		accessToken, err := getAccessToken(cfg)
+		if err != nil {
+			return fmt.Errorf("authentication required: %w. Run 'vfrog login' first", err)
+		}
+
+		// Create API client
+		ssatClient, err := vfrogapi.NewSSATClient(cfg, accessToken)
+		if err != nil {
+			return fmt.Errorf("failed to create API client: %w", err)
+		}
+
+		// Call API endpoint
+		params := vfrogapi.NextIterationParams{
+			IterationID: iterationID,
+		}
+
+		result, err := ssatClient.NextIteration(params)
+		if err != nil {
+			return fmt.Errorf("failed to create next iteration: %w", err)
+		}
+
+		if jsonOutput {
+			return output.PrintJSON(result)
+		}
+
+		newIterationID := fmt.Sprintf("%v", result["iteration_id"])
+		newIterationNumber := result["iteration_number"]
+		output.PrintSuccess(fmt.Sprintf("Created iteration #%v (ID: %s)", newIterationNumber, newIterationID))
+		return nil
+	},
 }
 
-func getString(m map[string]interface{}, key string) string {
-	if v, ok := m[key].(string); ok {
-		return v
-	}
-	return ""
+// iterationsRestartCmd represents the iterations restart command
+var iterationsRestartCmd = &cobra.Command{
+	Use:   "restart",
+	Short: "Restart an iteration (delete and recreate)",
+	Long: `Restart an iteration by deleting it and recreating it via the API project.
+
+This is only allowed if the iteration is the latest for this object
+(no iteration with a higher iteration_number exists).
+
+For iteration #1: Recreates with status "created".
+For iteration #2+: Recreates with ssat_model_id from the previous iteration's model_id.`,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		iterationID, _ := cmd.Flags().GetString("iteration_id")
+		if iterationID == "" {
+			return fmt.Errorf("iteration_id is required")
+		}
+
+		cfg, err := config.Load()
+		if err != nil {
+			return fmt.Errorf("failed to load config: %w", err)
+		}
+
+		// Get API key
+		// Get access token (requires login)
+		accessToken, err := getAccessToken(cfg)
+		if err != nil {
+			return fmt.Errorf("authentication required: %w. Run 'vfrog login' first", err)
+		}
+
+		// Create API client
+		ssatClient, err := vfrogapi.NewSSATClient(cfg, accessToken)
+		if err != nil {
+			return fmt.Errorf("failed to create API client: %w", err)
+		}
+
+		// Call API endpoint
+		params := vfrogapi.RestartIterationParams{
+			IterationID: iterationID,
+		}
+
+		result, err := ssatClient.RestartIteration(params)
+		if err != nil {
+			return fmt.Errorf("failed to restart iteration: %w", err)
+		}
+
+		if jsonOutput {
+			return output.PrintJSON(result)
+		}
+
+		newIterationID := fmt.Sprintf("%v", result["iteration_id"])
+		iterationNumber := result["iteration_number"]
+		output.PrintSuccess(fmt.Sprintf("Restarted iteration #%v (new ID: %s)", iterationNumber, newIterationID))
+		return nil
+	},
 }
 
 func init() {
@@ -823,6 +936,8 @@ func init() {
 	iterationsCmd.AddCommand(iterationsDeleteCmd)
 	iterationsCmd.AddCommand(iterationsSSATCmd)
 	iterationsCmd.AddCommand(iterationsHaloCmd)
+	iterationsCmd.AddCommand(iterationsNextCmd)
+	iterationsCmd.AddCommand(iterationsRestartCmd)
 
 	rootCmd.AddCommand(iterationTrainCmd)
 
@@ -832,4 +947,6 @@ func init() {
 	iterationsSSATCmd.Flags().String("iteration_id", "", "Iteration ID")
 	iterationsHaloCmd.Flags().String("iteration_id", "", "Iteration ID")
 	iterationTrainCmd.Flags().String("iteration_id", "", "Iteration ID to train")
+	iterationsNextCmd.Flags().String("iteration_id", "", "Current iteration ID to create next from")
+	iterationsRestartCmd.Flags().String("iteration_id", "", "Iteration ID to restart")
 }
