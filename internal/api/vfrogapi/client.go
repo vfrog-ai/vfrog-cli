@@ -1,0 +1,126 @@
+package vfrogapi
+
+import (
+	"bytes"
+	"encoding/base64"
+	"encoding/json"
+	"fmt"
+	"io"
+	"net/http"
+	"os"
+	"time"
+
+	"github.com/vfrog/vfrog-cli/internal/config"
+)
+
+// Client represents a vfrog API client
+type Client struct {
+	baseURL    string
+	apiKey     string
+	httpClient *http.Client
+}
+
+// NewClient creates a new vfrog API client
+func NewClient(cfg *config.Config, apiKeyOverride string) (*Client, error) {
+	apiURL := cfg.APIURL
+	if apiURL == "" {
+		apiURL = "https://api-dev.vfrog.ai"
+	}
+
+	apiKey := apiKeyOverride
+	if apiKey == "" {
+		apiKey = os.Getenv("VFROG_API_KEY")
+	}
+	if apiKey == "" {
+		apiKey = cfg.APIKey
+	}
+	if apiKey == "" {
+		return nil, fmt.Errorf("API key not configured. Set it via --api-key flag, VFROG_API_KEY env var, or config file")
+	}
+
+	return &Client{
+		baseURL:    apiURL,
+		apiKey:     apiKey,
+		httpClient: &http.Client{Timeout: 60 * time.Second},
+	}, nil
+}
+
+// InferenceRequest represents a CV inference request
+type InferenceRequest struct {
+	ImageURL   string `json:"image_url,omitempty"`
+	ImageBase64 string `json:"image_base64,omitempty"`
+	ExternalID string `json:"external_id,omitempty"`
+}
+
+// InferenceResponse represents a CV inference response
+type InferenceResponse struct {
+	Success   bool                   `json:"success"`
+	RequestID string                 `json:"request_id"`
+	ImageURL  string                 `json:"image_url"`
+	Status    string                 `json:"status"`
+	Error     string                 `json:"error,omitempty"`
+	Results   []map[string]interface{} `json:"results,omitempty"`
+}
+
+// RunInference runs a CV inference request
+func (c *Client) RunInference(req InferenceRequest) (*InferenceResponse, error) {
+	url := fmt.Sprintf("%s/v1/cv/requests/sync", c.baseURL)
+
+	jsonData, err := json.Marshal(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal request: %w", err)
+	}
+
+	httpReq, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonData))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	httpReq.Header.Set("Content-Type", "application/json")
+	httpReq.Header.Set("x-api-key", c.apiKey)
+
+	resp, err := c.httpClient.Do(httpReq)
+	if err != nil {
+		return nil, fmt.Errorf("failed to send request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read response: %w", err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("request failed (status %d): %s", resp.StatusCode, string(body))
+	}
+
+	var result InferenceResponse
+	if err := json.Unmarshal(body, &result); err != nil {
+		return nil, fmt.Errorf("failed to parse response: %w", err)
+	}
+
+	return &result, nil
+}
+
+// EncodeImageFile reads a local image file and returns base64 encoded data URL
+func EncodeImageFile(filePath string) (string, error) {
+	data, err := os.ReadFile(filePath)
+	if err != nil {
+		return "", fmt.Errorf("failed to read file: %w", err)
+	}
+
+	// Determine MIME type from extension
+	mimeType := "image/jpeg"
+	if len(filePath) > 4 {
+		ext := filePath[len(filePath)-4:]
+		if ext == ".png" {
+			mimeType = "image/png"
+		} else if ext == ".webp" {
+			mimeType = "image/webp"
+		}
+	}
+
+	encoded := base64.StdEncoding.EncodeToString(data)
+	return fmt.Sprintf("data:%s;base64,%s", mimeType, encoded), nil
+}
+
