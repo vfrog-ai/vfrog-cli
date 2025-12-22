@@ -12,7 +12,15 @@ import (
 
 // organisationsCmd represents the organisations command
 var organisationsCmd = &cobra.Command{
-	Use:   "organisations",
+	Use:     "organisations",
+	Aliases: []string{"orgs"},
+	Short:   "Manage organisations",
+	Long:    `Manage organisations the authenticated user belongs to.`,
+}
+
+// organisationsListCmd represents the organisations list command
+var organisationsListCmd = &cobra.Command{
+	Use:   "list",
 	Short: "List organisations",
 	Long:  `List all organisations the authenticated user belongs to.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
@@ -26,24 +34,68 @@ var organisationsCmd = &cobra.Command{
 			return fmt.Errorf("failed to create Supabase client: %w", err)
 		}
 
+		// Query with plan join: organisation.plan:plan_id(type)
 		orgUsers, err := client.Get("organisation_user", map[string]string{
-			"select": "organisation_id,organisation(id,name)",
+			"select": "organisation_id,organisation:organisation_id(id,name,plan:plan_id(type))",
 		})
 		if err != nil {
 			return fmt.Errorf("failed to get organisations: %w", err)
 		}
 
+		// Deduplicate by organisation_id
+		seen := make(map[string]bool)
+		var uniqueOrgs []map[string]interface{}
+
+		for _, ou := range orgUsers {
+			orgID, ok := ou["organisation_id"].(string)
+			if !ok {
+				continue
+			}
+			if seen[orgID] {
+				continue
+			}
+			seen[orgID] = true
+
+			if org, ok := ou["organisation"].(map[string]interface{}); ok {
+				// Extract plan type from nested plan object
+				var planType interface{}
+				if plan, ok := org["plan"].(map[string]interface{}); ok {
+					planType = plan["type"]
+				}
+
+				uniqueOrgs = append(uniqueOrgs, map[string]interface{}{
+					"id":        org["id"],
+					"name":      org["name"],
+					"plan_type": planType,
+				})
+			}
+		}
+
 		if jsonOutput {
-			return output.PrintJSON(orgUsers)
+			// Add selected flag to JSON output
+			for i := range uniqueOrgs {
+				if id, ok := uniqueOrgs[i]["id"].(string); ok && id == cfg.OrganisationID {
+					uniqueOrgs[i]["selected"] = true
+				} else {
+					uniqueOrgs[i]["selected"] = false
+				}
+			}
+			return output.PrintJSON(uniqueOrgs)
 		}
 
 		fmt.Println("Organisations:")
-		for _, ou := range orgUsers {
-			if org, ok := ou["organisation"].(map[string]interface{}); ok {
-				if name, ok := org["name"].(string); ok {
-					fmt.Printf("  - %s (ID: %v)\n", name, org["id"])
-				}
+		for _, org := range uniqueOrgs {
+			name := org["name"]
+			id := org["id"].(string)
+			planType := org["plan_type"]
+			if planType == nil {
+				planType = "-"
 			}
+			marker := "  "
+			if id == cfg.OrganisationID {
+				marker = "✓ "
+			}
+			fmt.Printf("  %s%s (ID: %s, Plan: %v)\n", marker, name, id, planType)
 		}
 
 		return nil
@@ -52,4 +104,5 @@ var organisationsCmd = &cobra.Command{
 
 func init() {
 	rootCmd.AddCommand(organisationsCmd)
+	organisationsCmd.AddCommand(organisationsListCmd)
 }

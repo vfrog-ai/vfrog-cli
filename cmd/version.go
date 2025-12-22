@@ -15,9 +15,19 @@ var versionCmd = &cobra.Command{
 	Short: "Print CLI version and environment",
 	Long:  `Print the vfrog CLI version and the environment it was built for.`,
 	Run: func(cmd *cobra.Command, args []string) {
+		version := config.Version
+		if version == "" {
+			version = "local-build"
+		}
+
+		env := config.Environment
+		if env == "" {
+			env = "local"
+		}
+
 		info := map[string]string{
-			"version":     config.Version,
-			"environment": config.Environment,
+			"version":     version,
+			"environment": env,
 		}
 
 		if jsonOutput {
@@ -25,11 +35,10 @@ var versionCmd = &cobra.Command{
 			return
 		}
 
-		fmt.Printf("vfrog CLI %s (%s)\n", config.Version, config.Environment)
+		fmt.Printf("vfrog %s (%s)\n", version, env)
 	},
 }
 
 func init() {
 	rootCmd.AddCommand(versionCmd)
 }
-

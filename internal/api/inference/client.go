@@ -83,3 +83,73 @@ func (c *Client) SubmitTrainingTask(payload map[string]interface{}) (map[string]
 
 	return result, nil
 }
+
+// InferenceImage represents a dataset image for inference
+type InferenceImage struct {
+	ID      string `json:"id"`
+	FileURL string `json:"file_url"`
+}
+
+// AnnotatedImage represents an annotated image for inference
+type AnnotatedImage struct {
+	DatasetImagesID string       `json:"dataset_images_id"`
+	Annotation      []Annotation `json:"annotation"`
+}
+
+// Annotation represents a single annotation box
+type Annotation struct {
+	X      float64 `json:"x"`
+	Y      float64 `json:"y"`
+	Width  float64 `json:"width"`
+	Height float64 `json:"height"`
+	Label  string  `json:"label"`
+}
+
+// InferenceTaskPayload represents the payload for an inference task
+type InferenceTaskPayload struct {
+	ProjectIterationID string           `json:"project_iteration_id"`
+	ModelPath          string           `json:"model_path"`
+	DatasetImages      []InferenceImage `json:"dataset_images"`
+	AnnotatedImages    []AnnotatedImage `json:"annotated_images"`
+	CallbackURL        string           `json:"callback_url,omitempty"`
+}
+
+// SubmitInferenceTask submits an inference task to the inference server
+func (c *Client) SubmitInferenceTask(payload InferenceTaskPayload) (map[string]interface{}, error) {
+	url := fmt.Sprintf("%s/run-inference", c.baseURL)
+
+	jsonData, err := json.Marshal(payload)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal payload: %w", err)
+	}
+
+	req, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonData))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("x-api-key", c.apiKey)
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to send request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read response: %w", err)
+	}
+
+	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusAccepted {
+		return nil, fmt.Errorf("request failed (status %d): %s", resp.StatusCode, string(body))
+	}
+
+	var result map[string]interface{}
+	if err := json.Unmarshal(body, &result); err != nil {
+		return nil, fmt.Errorf("failed to parse response: %w", err)
+	}
+
+	return result, nil
+}

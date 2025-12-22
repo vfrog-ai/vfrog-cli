@@ -3,12 +3,13 @@ package cmd
 import (
 	"fmt"
 	"math/rand"
+	"os"
 	"time"
 
 	"github.com/spf13/cobra"
 
-	"github.com/vfrog/vfrog-cli/internal/api/inference"
 	"github.com/vfrog/vfrog-cli/internal/api/supabase"
+	"github.com/vfrog/vfrog-cli/internal/api/vfrogapi"
 	"github.com/vfrog/vfrog-cli/internal/config"
 	"github.com/vfrog/vfrog-cli/internal/output"
 )
@@ -210,8 +211,18 @@ var iterationsDeleteCmd = &cobra.Command{
 // iterationsSSATCmd represents the iterations ssat command
 var iterationsSSATCmd = &cobra.Command{
 	Use:   "ssat",
-	Short: "Get SSAT URL for an iteration",
-	Long:  `Print the Platform URL for SSAT (Semi-Supervised Active Training) workflow for an iteration.`,
+	Short: "Start SSAT auto-annotation for an iteration",
+	Long: `Start the SSAT (Semi-Supervised Active Training) annotation workflow for an iteration.
+	
+For iteration 1: Uses the annotator service with cutout extraction and matching.
+For iteration 2+: Uses inference with a trained model from the previous iteration.
+
+The number of dataset images processed depends on the iteration number:
+- Iteration 1: 20 images
+- Iteration 2: 40 images
+- Iteration 3+: 80 images
+
+The iteration must be in 'created' status to start SSAT.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		iterationID, _ := cmd.Flags().GetString("iteration_id")
 		if iterationID == "" {
@@ -223,40 +234,101 @@ var iterationsSSATCmd = &cobra.Command{
 			return fmt.Errorf("failed to load config: %w", err)
 		}
 
+		if err := cfg.RequireOrganisationID(); err != nil {
+			return err
+		}
+
 		client, err := supabase.NewClient(cfg)
 		if err != nil {
 			return fmt.Errorf("failed to create Supabase client: %w", err)
 		}
 
+		// Get iteration details
 		iterations, err := client.Get("project_iteration", map[string]string{
 			"id":     fmt.Sprintf("eq.%s", iterationID),
-			"select": "project_id,product_image_id",
+			"select": "id,project_id,product_image_id,iteration_number,status,model_id,ssat_model_id",
 		})
 		if err != nil {
 			return fmt.Errorf("failed to get iteration: %w", err)
 		}
 
 		if len(iterations) == 0 {
-			return fmt.Errorf("iteration not found")
+			return fmt.Errorf("iteration not found: %s", iterationID)
 		}
 
 		iter := iterations[0]
-		projectID := iter["project_id"].(string)
-		productID := iter["product_image_id"].(string)
-
-		platformHost := cfg.PlatformHost
-		if platformHost == "" {
-			platformHost = "https://platform.vfrog.ai"
+		status := iter["status"].(string)
+		
+		// Check if iteration is in 'created' status
+		if status != "created" {
+			return fmt.Errorf("iteration status must be 'created' to start SSAT (current: %s)", status)
 		}
 
-		url := fmt.Sprintf("%s/org/%s/proj/%s/prod/%s/iter/%s", platformHost, cfg.OrganisationID, projectID, productID, iterationID)
+		productImageID := iter["product_image_id"].(string)
+		iterationNumber := int(iter["iteration_number"].(float64))
 
-		if jsonOutput {
-			return output.PrintJSON(map[string]string{"url": url, "iteration_id": iterationID})
+		// Determine number of images based on iteration number
+		var imageCount int
+		switch iterationNumber {
+		case 1:
+			imageCount = 20
+		case 2:
+			imageCount = 40
+		default:
+			imageCount = 80
 		}
 
-		fmt.Println(url)
-		return nil
+		// Get linked dataset images for this iteration
+		datasetImageLinks, err := client.Get("project_iteration_dataset_images", map[string]string{
+			"project_iteration_id": fmt.Sprintf("eq.%s", iterationID),
+			"select":               "id,dataset_image_id,dataset_images(id,file_url)",
+		})
+		if err != nil {
+			return fmt.Errorf("failed to get dataset images: %w", err)
+		}
+
+		if len(datasetImageLinks) == 0 {
+			return fmt.Errorf("no dataset images linked to this iteration. Create the iteration with dataset images first")
+		}
+
+		// Limit to imageCount
+		if len(datasetImageLinks) > imageCount {
+			// Randomly select imageCount images
+			rand.Seed(time.Now().UnixNano())
+			selectedIndices := rand.Perm(len(datasetImageLinks))[:imageCount]
+			selected := make([]map[string]interface{}, imageCount)
+			for i, idx := range selectedIndices {
+				selected[i] = datasetImageLinks[idx]
+			}
+			datasetImageLinks = selected
+		}
+
+		// Check if we have a model (iteration 2+)
+		var modelID string
+		if iter["model_id"] != nil {
+			modelID = iter["model_id"].(string)
+		} else if iter["ssat_model_id"] != nil {
+			modelID = iter["ssat_model_id"].(string)
+		}
+
+		// For iteration 2+, require a model
+		if iterationNumber >= 2 && modelID == "" {
+			return fmt.Errorf("no model available. Train a model on iteration %d before starting iteration %d", iterationNumber-1, iterationNumber)
+		}
+
+		// Build callback URL
+		callbackURL := ""
+		if cfg.APIProjectBaseURL != "" {
+			callbackURL = fmt.Sprintf("%s/api/v1/callback/project-status-update?include_annotations=true", cfg.APIProjectBaseURL)
+		}
+
+		if iterationNumber >= 2 && modelID != "" {
+			// Use inference for iteration 2+
+			return runInferenceSSAT(cmd, cfg, client, iterationID, modelID, datasetImageLinks, callbackURL)
+		}
+
+		// Use annotator for iteration 1
+		return runAnnotatorSSAT(cmd, cfg, client, iterationID, productImageID, datasetImageLinks, callbackURL)
 	},
 }
 
@@ -316,7 +388,7 @@ var iterationsHaloCmd = &cobra.Command{
 var iterationTrainCmd = &cobra.Command{
 	Use:   "train",
 	Short: "Train a model for an iteration",
-	Long:  `Train a model for an iteration using the inference server.`,
+	Long:  `Train a model for an iteration using the API project.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		iterationID, _ := cmd.Flags().GetString("iteration_id")
 		if iterationID == "" {
@@ -334,6 +406,12 @@ var iterationTrainCmd = &cobra.Command{
 
 		if err := cfg.RequireOrganisationID(); err != nil {
 			return err
+		}
+
+		// Get API key
+		apiKey := getAPIKey(cfg)
+		if apiKey == "" {
+			return fmt.Errorf("API key is required. Set VFROG_API_KEY env var or use 'vfrog config set api_key'")
 		}
 
 		client, err := supabase.NewClient(cfg)
@@ -379,17 +457,27 @@ var iterationTrainCmd = &cobra.Command{
 			return fmt.Errorf("failed to get dataset images: %w", err)
 		}
 
-		datasetImages := make([]map[string]interface{}, 0, len(datasetImageLinks))
+		datasetImages := make([]vfrogapi.InferenceImageRef, 0, len(datasetImageLinks))
 		for _, link := range datasetImageLinks {
 			if datasetImg, ok := link["dataset_images"].(map[string]interface{}); ok {
-				datasetImages = append(datasetImages, map[string]interface{}{
-					"id":       link["dataset_image_id"],
-					"file_url": datasetImg["file_url"],
-				})
+				imgID := ""
+				if id, ok := link["dataset_image_id"].(string); ok {
+					imgID = id
+				}
+				imgURL := ""
+				if url, ok := datasetImg["file_url"].(string); ok {
+					imgURL = url
+				}
+				if imgID != "" && imgURL != "" {
+					datasetImages = append(datasetImages, vfrogapi.InferenceImageRef{
+						ID:      imgID,
+						FileURL: imgURL,
+					})
+				}
 			}
 		}
 
-		annotatedImages, err := client.Get("project_iteration_annotated_images", map[string]string{
+		annotatedImagesData, err := client.Get("project_iteration_annotated_images", map[string]string{
 			"project_iteration_id": fmt.Sprintf("eq.%s", iterationID),
 			"select":               "dataset_images_id,annotation",
 		})
@@ -397,12 +485,22 @@ var iterationTrainCmd = &cobra.Command{
 			return fmt.Errorf("failed to get annotated images: %w", err)
 		}
 
-		annotatedImagesList := make([]map[string]interface{}, 0, len(annotatedImages))
-		for _, annImg := range annotatedImages {
-			annotatedImagesList = append(annotatedImagesList, map[string]interface{}{
-				"dataset_images_id": annImg["dataset_images_id"],
-				"annotation":        annImg["annotation"],
-			})
+		annotatedImages := make([]vfrogapi.AnnotatedImageRef, 0, len(annotatedImagesData))
+		for _, annImg := range annotatedImagesData {
+			dsID := ""
+			if id, ok := annImg["dataset_images_id"].(string); ok {
+				dsID = id
+			}
+			var annotations []interface{}
+			if ann, ok := annImg["annotation"].([]interface{}); ok {
+				annotations = ann
+			}
+			if dsID != "" {
+				annotatedImages = append(annotatedImages, vfrogapi.AnnotatedImageRef{
+					DatasetImagesID: dsID,
+					Annotation:      annotations,
+				})
+			}
 		}
 
 		callbackURL := ""
@@ -410,27 +508,33 @@ var iterationTrainCmd = &cobra.Command{
 			callbackURL = fmt.Sprintf("%s/api/v1/callback/project-status-update", cfg.APIProjectBaseURL)
 		}
 
-		inferenceClient, err := inference.NewClient(cfg, "")
+		// Create API client
+		ssatClient, err := vfrogapi.NewSSATClient(cfg, apiKey)
 		if err != nil {
-			return fmt.Errorf("failed to create inference client: %w", err)
+			return fmt.Errorf("failed to create API client: %w", err)
 		}
 
-		taskResponse, err := inferenceClient.SubmitTrainingTask(map[string]interface{}{
-			"project_iteration_id": iterationID,
-			"organisation_id":      cfg.OrganisationID,
-			"project_name":         projectName,
-			"product_id":           productID,
-			"dataset_images":       datasetImages,
-			"annotated_images":     annotatedImagesList,
-			"callback_url":         callbackURL,
-		})
+		// Submit training task via API project
+		params := vfrogapi.TrainParams{
+			ProjectIterationID: iterationID,
+			OrganisationID:     cfg.OrganisationID,
+			ProjectName:        projectName,
+			ProductID:          productID,
+			DatasetImages:      datasetImages,
+			AnnotatedImages:    annotatedImages,
+			CallbackURL:        callbackURL,
+		}
+
+		taskResponse, err := ssatClient.Train(params)
 		if err != nil {
 			return fmt.Errorf("failed to submit training task: %w", err)
 		}
 
 		updateData := map[string]interface{}{
-			"task_id":        taskResponse["task_id"],
 			"trained_status": "training",
+		}
+		if taskID, ok := taskResponse["task_id"]; ok {
+			updateData["task_id"] = taskID
 		}
 		if err := client.Patch("project_iteration", iterationID, updateData); err != nil {
 			return fmt.Errorf("failed to update iteration: %w", err)
@@ -443,6 +547,273 @@ var iterationTrainCmd = &cobra.Command{
 		output.PrintSuccess(fmt.Sprintf("Training started for iteration %s (task_id: %v)", iterationID, taskResponse["task_id"]))
 		return nil
 	},
+}
+
+// getAPIKey gets the API key from flag, env var, or config
+func getAPIKey(cfg *config.Config) string {
+	// Check flag (set by parent command)
+	apiKey := os.Getenv("VFROG_API_KEY")
+	if apiKey != "" {
+		return apiKey
+	}
+	// Check config
+	if cfg.APIKey != "" {
+		return cfg.APIKey
+	}
+	return ""
+}
+
+// runAnnotatorSSAT runs SSAT using the API project (for iteration 1)
+func runAnnotatorSSAT(cmd *cobra.Command, cfg *config.Config, client *supabase.Client, iterationID, productImageID string, datasetImageLinks []map[string]interface{}, callbackURL string) error {
+	// Get API key
+	apiKey := getAPIKey(cfg)
+	if apiKey == "" {
+		return fmt.Errorf("API key is required. Set VFROG_API_KEY env var or use 'vfrog config set api_key'")
+	}
+
+	// Get product image details
+	productImages, err := client.Get("product_images", map[string]string{
+		"id":     fmt.Sprintf("eq.%s", productImageID),
+		"select": "id,label,file_url,file_path",
+	})
+	if err != nil {
+		return fmt.Errorf("failed to get product image: %w", err)
+	}
+
+	if len(productImages) == 0 {
+		return fmt.Errorf("product image not found: %s", productImageID)
+	}
+
+	productImage := productImages[0]
+	productImageURL := ""
+	if url, ok := productImage["file_url"].(string); ok && url != "" {
+		productImageURL = url
+	} else if path, ok := productImage["file_path"].(string); ok {
+		productImageURL = path
+	}
+
+	if productImageURL == "" {
+		return fmt.Errorf("product image has no URL")
+	}
+
+	label := "product"
+	if l, ok := productImage["label"].(string); ok && l != "" {
+		label = l
+	}
+
+	// Build dataset images list
+	datasetImages := make([]vfrogapi.DatasetImageRef, 0, len(datasetImageLinks))
+	for _, link := range datasetImageLinks {
+		if dsImg, ok := link["dataset_images"].(map[string]interface{}); ok {
+			imgID := link["dataset_image_id"].(string)
+			imgURL := ""
+			if url, ok := dsImg["file_url"].(string); ok && url != "" {
+				imgURL = url
+			}
+			if imgURL != "" {
+				datasetImages = append(datasetImages, vfrogapi.DatasetImageRef{
+					ID:       imgID,
+					ImageURL: imgURL,
+				})
+			}
+		}
+	}
+
+	if len(datasetImages) == 0 {
+		return fmt.Errorf("no valid dataset images found")
+	}
+
+	// Create API client
+	ssatClient, err := vfrogapi.NewSSATClient(cfg, apiKey)
+	if err != nil {
+		return fmt.Errorf("failed to create API client: %w", err)
+	}
+
+	// Submit batch via API project
+	params := vfrogapi.BatchSubmitParams{
+		ProjectIterationID: iterationID,
+		ProductImage: vfrogapi.ProductImageRef{
+			ID:       productImageID,
+			ImageURL: productImageURL,
+			Label:    label,
+		},
+		DatasetImages: datasetImages,
+		CallbackURL:   callbackURL,
+	}
+
+	_, err = ssatClient.BatchSubmit(params)
+	if err != nil {
+		return fmt.Errorf("failed to submit SSAT batch: %w", err)
+	}
+
+	// Update iteration status to annotating
+	if err := client.Patch("project_iteration", iterationID, map[string]interface{}{
+		"status": "annotating",
+	}); err != nil {
+		return fmt.Errorf("failed to update iteration status: %w", err)
+	}
+
+	if jsonOutput {
+		return output.PrintJSON(map[string]interface{}{
+			"iteration_id":   iterationID,
+			"status":         "annotating",
+			"dataset_images": len(datasetImages),
+			"method":         "ssat-batch",
+		})
+	}
+
+	output.PrintSuccess(fmt.Sprintf("SSAT started for iteration %s with %d dataset images", iterationID, len(datasetImages)))
+	return nil
+}
+
+// runInferenceSSAT runs SSAT using the API project (for iteration 2+)
+func runInferenceSSAT(cmd *cobra.Command, cfg *config.Config, client *supabase.Client, iterationID, modelID string, datasetImageLinks []map[string]interface{}, callbackURL string) error {
+	// Get API key
+	apiKey := getAPIKey(cfg)
+	if apiKey == "" {
+		return fmt.Errorf("API key is required. Set VFROG_API_KEY env var or use 'vfrog config set api_key'")
+	}
+
+	// Get model details
+	models, err := client.Get("models", map[string]string{
+		"id":     fmt.Sprintf("eq.%s", modelID),
+		"select": "id,model_path",
+	})
+	if err != nil {
+		return fmt.Errorf("failed to get model: %w", err)
+	}
+
+	if len(models) == 0 {
+		return fmt.Errorf("model not found: %s", modelID)
+	}
+
+	modelPath := ""
+	if path, ok := models[0]["model_path"].(string); ok {
+		modelPath = path
+	}
+
+	if modelPath == "" {
+		return fmt.Errorf("model has no model_path")
+	}
+
+	// Build dataset images list (use project_iteration_dataset_image.id, not dataset_image_id)
+	datasetImages := make([]vfrogapi.InferenceImageRef, 0, len(datasetImageLinks))
+	for _, link := range datasetImageLinks {
+		if dsImg, ok := link["dataset_images"].(map[string]interface{}); ok {
+			// Use the project_iteration_dataset_images.id as the id (not dataset_image_id)
+			imgID := link["id"].(string)
+			imgURL := ""
+			if url, ok := dsImg["file_url"].(string); ok && url != "" {
+				imgURL = url
+			}
+			if imgURL != "" {
+				datasetImages = append(datasetImages, vfrogapi.InferenceImageRef{
+					ID:      imgID,
+					FileURL: imgURL,
+				})
+			}
+		}
+	}
+
+	if len(datasetImages) == 0 {
+		return fmt.Errorf("no valid dataset images found")
+	}
+
+	// Get existing annotated images for this iteration
+	annotatedImagesData, err := client.Get("project_iteration_annotated_images", map[string]string{
+		"project_iteration_id": fmt.Sprintf("eq.%s", iterationID),
+		"select":               "project_iteration_dataset_image_id,annotation,project_iteration_dataset_images!inner(dataset_image_id)",
+	})
+	if err != nil {
+		return fmt.Errorf("failed to get annotated images: %w", err)
+	}
+
+	// Build annotated images list
+	annotatedImages := make([]vfrogapi.AnnotatedImageRef, 0, len(annotatedImagesData))
+	for _, annImg := range annotatedImagesData {
+		var datasetImageID string
+		if pidsiData, ok := annImg["project_iteration_dataset_images"].(map[string]interface{}); ok {
+			if dsID, ok := pidsiData["dataset_image_id"].(string); ok {
+				datasetImageID = dsID
+			}
+		}
+
+		if datasetImageID == "" {
+			continue
+		}
+
+		// Parse annotation as []interface{} for the API
+		var annotations []interface{}
+		if ann, ok := annImg["annotation"].([]interface{}); ok {
+			annotations = ann
+		}
+
+		annotatedImages = append(annotatedImages, vfrogapi.AnnotatedImageRef{
+			DatasetImagesID: datasetImageID,
+			Annotation:      annotations,
+		})
+	}
+
+	// Create API client
+	ssatClient, err := vfrogapi.NewSSATClient(cfg, apiKey)
+	if err != nil {
+		return fmt.Errorf("failed to create API client: %w", err)
+	}
+
+	// Submit inference task via API project
+	params := vfrogapi.RunInferenceParams{
+		ProjectIterationID: iterationID,
+		ModelPath:          modelPath,
+		DatasetImages:      datasetImages,
+		AnnotatedImages:    annotatedImages,
+		CallbackURL:        callbackURL,
+	}
+
+	result, err := ssatClient.RunInference(params)
+	if err != nil {
+		return fmt.Errorf("failed to submit inference task: %w", err)
+	}
+
+	// Update iteration status to annotating and store task_id
+	updateData := map[string]interface{}{
+		"status": "annotating",
+	}
+	if taskID, ok := result["task_id"]; ok {
+		updateData["task_id"] = taskID
+	}
+	if err := client.Patch("project_iteration", iterationID, updateData); err != nil {
+		return fmt.Errorf("failed to update iteration status: %w", err)
+	}
+
+	if jsonOutput {
+		return output.PrintJSON(map[string]interface{}{
+			"iteration_id":     iterationID,
+			"task_id":          result["task_id"],
+			"status":           "annotating",
+			"dataset_images":   len(datasetImages),
+			"annotated_images": len(annotatedImages),
+			"method":           "inference",
+			"model_id":         modelID,
+		})
+	}
+
+	output.PrintSuccess(fmt.Sprintf("SSAT started for iteration %s with %d dataset images (model: %s)", iterationID, len(datasetImages), modelID))
+	return nil
+}
+
+// Helper functions for parsing map values
+func getFloat(m map[string]interface{}, key string) float64 {
+	if v, ok := m[key].(float64); ok {
+		return v
+	}
+	return 0
+}
+
+func getString(m map[string]interface{}, key string) string {
+	if v, ok := m[key].(string); ok {
+		return v
+	}
+	return ""
 }
 
 func init() {

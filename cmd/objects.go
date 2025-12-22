@@ -74,13 +74,13 @@ var objectsCreateCmd = &cobra.Command{
 		}
 
 		objectData := map[string]interface{}{
-			"project_id":  cfg.ProjectID,
-			"user_id":     userID,
-			"file_name":   filename,
-			"file_path":   imageURL,
-			"file_size":   0,
-			"mime_type":   mimeType,
-			"processed":   false,
+			"project_id": cfg.ProjectID,
+			"user_id":    userID,
+			"filename":   filename,
+			"file_path":  imageURL,
+			"file_size":  0,
+			"mime_type":  mimeType,
+			"processed":  false,
 		}
 
 		if label != "" {
@@ -126,7 +126,7 @@ var objectsListCmd = &cobra.Command{
 
 		objects, err := client.Get("product_images", map[string]string{
 			"project_id": fmt.Sprintf("eq.%s", cfg.ProjectID),
-			"select":     "id,file_name,file_path,label,external_id,created_at",
+			"select":     "id,filename,file_path,label,external_id,created_at",
 		})
 		if err != nil {
 			return fmt.Errorf("failed to list objects: %w", err)
@@ -138,7 +138,7 @@ var objectsListCmd = &cobra.Command{
 
 		fmt.Println("Objects:")
 		for _, obj := range objects {
-			name := obj["file_name"]
+			name := obj["filename"]
 			if label, ok := obj["label"].(string); ok && label != "" {
 				name = label
 			}

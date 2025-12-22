@@ -30,6 +30,7 @@ jobs:
             binary_suffix: '-dev'
             api_url: 'https://api-dev.vfrog.ai'
             inference_url: 'https://inference-dev.vfrog.ai'
+            annotator_url: 'https://annotator-dev.vfrog.ai'
             api_project_base_url: 'https://api-dev.vfrog.ai'
             platform_host: 'https://platform-dev.vfrog.ai'
             supabase_url_secret: 'dev-supabase-url'
@@ -41,6 +42,7 @@ jobs:
             binary_suffix: '-staging'
             api_url: 'https://api-staging.vfrog.ai'
             inference_url: 'https://inference-staging.vfrog.ai'
+            annotator_url: 'https://annotator-staging.vfrog.ai'
             api_project_base_url: 'https://api-staging.vfrog.ai'
             platform_host: 'https://platform-staging.vfrog.ai'
             supabase_url_secret: 'staging-supabase-url'
@@ -52,6 +54,7 @@ jobs:
             binary_suffix: ''
             api_url: 'https://api.vfrog.ai'
             inference_url: 'https://inference.vfrog.ai'
+            annotator_url: 'https://annotator.vfrog.ai'
             api_project_base_url: 'https://api.vfrog.ai'
             platform_host: 'https://platform.vfrog.ai'
             supabase_url_secret: 'prod-supabase-url'
@@ -108,6 +111,7 @@ jobs:
           LDFLAGS="${LDFLAGS} -X 'github.com/vfrog/vfrog-cli/internal/config.DefaultSupabasePublishableKey=${SUPABASE_KEY}'"
           LDFLAGS="${LDFLAGS} -X 'github.com/vfrog/vfrog-cli/internal/config.DefaultAPIURL=${{ matrix.api_url }}'"
           LDFLAGS="${LDFLAGS} -X 'github.com/vfrog/vfrog-cli/internal/config.DefaultInferenceURL=${{ matrix.inference_url }}'"
+          LDFLAGS="${LDFLAGS} -X 'github.com/vfrog/vfrog-cli/internal/config.DefaultAnnotatorURL=${{ matrix.annotator_url }}'"
           LDFLAGS="${LDFLAGS} -X 'github.com/vfrog/vfrog-cli/internal/config.DefaultAPIProjectBaseURL=${{ matrix.api_project_base_url }}'"
           LDFLAGS="${LDFLAGS} -X 'github.com/vfrog/vfrog-cli/internal/config.DefaultPlatformHost=${{ matrix.platform_host }}'"
 

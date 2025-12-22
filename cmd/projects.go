@@ -40,19 +40,32 @@ var projectsListCmd = &cobra.Command{
 
 		projects, err := client.Get("projects", map[string]string{
 			"organisation_id": fmt.Sprintf("eq.%s", cfg.OrganisationID),
-			"select":          "id,title,description,created_at",
+			"select":          "id,title,created_at",
 		})
 		if err != nil {
 			return fmt.Errorf("failed to list projects: %w", err)
 		}
 
 		if jsonOutput {
+			// Add selected flag to JSON output
+			for i := range projects {
+				if id, ok := projects[i]["id"].(string); ok && id == cfg.ProjectID {
+					projects[i]["selected"] = true
+				} else {
+					projects[i]["selected"] = false
+				}
+			}
 			return output.PrintJSON(projects)
 		}
 
 		fmt.Println("Projects:")
 		for _, p := range projects {
-			fmt.Printf("  - %s (ID: %v)\n", p["title"], p["id"])
+			id := p["id"].(string)
+			marker := "  "
+			if id == cfg.ProjectID {
+				marker = "✓ "
+			}
+			fmt.Printf("  %s%s (ID: %s)\n", marker, p["title"], id)
 		}
 
 		return nil

@@ -19,14 +19,16 @@ var (
 	DefaultAPIURL = ""
 	// DefaultInferenceURL is set at build time for each environment binary
 	DefaultInferenceURL = ""
+	// DefaultAnnotatorURL is set at build time for each environment binary
+	DefaultAnnotatorURL = ""
 	// DefaultAPIProjectBaseURL is set at build time for each environment binary
 	DefaultAPIProjectBaseURL = ""
 	// DefaultPlatformHost is set at build time for each environment binary
 	DefaultPlatformHost = ""
-	// Environment name (dev, staging, production) - informational
-	Environment = "production"
-	// Version is set at build time
-	Version = "dev"
+	// Environment name (dev, staging, production) - set at build time
+	Environment = ""
+	// Version is set at build time (e.g., v0.1.0)
+	Version = ""
 )
 
 var (
@@ -37,17 +39,19 @@ var (
 
 // Config represents the CLI configuration
 type Config struct {
-	SupabaseURL          string    `json:"supabase_url,omitempty"`
-	SupabasePublishableKey string  `json:"supabase_publishable_key,omitempty"`
-	OrganisationID       string    `json:"organisation_id,omitempty"`
-	ProjectID            string    `json:"project_id,omitempty"`
-	APIURL               string    `json:"api_url,omitempty"`
-	InferenceURL         string    `json:"inference_url,omitempty"`
-	InferenceAPIKey      string    `json:"inference_api_key,omitempty"`
-	APIProjectBaseURL    string    `json:"api_project_base_url,omitempty"`
-	PlatformHost         string    `json:"platform_host,omitempty"`
-	APIKey               string    `json:"api_key,omitempty"`
-	Auth                 *Auth    `json:"auth,omitempty"`
+	SupabaseURL            string `json:"supabase_url,omitempty"`
+	SupabasePublishableKey string `json:"supabase_publishable_key,omitempty"`
+	OrganisationID         string `json:"organisation_id,omitempty"`
+	ProjectID              string `json:"project_id,omitempty"`
+	APIURL                 string `json:"api_url,omitempty"`
+	InferenceURL           string `json:"inference_url,omitempty"`
+	InferenceAPIKey        string `json:"inference_api_key,omitempty"`
+	AnnotatorURL           string `json:"annotator_url,omitempty"`
+	AnnotatorAPIKey        string `json:"annotator_api_key,omitempty"`
+	APIProjectBaseURL      string `json:"api_project_base_url,omitempty"`
+	PlatformHost           string `json:"platform_host,omitempty"`
+	APIKey                 string `json:"api_key,omitempty"`
+	Auth                   *Auth  `json:"auth,omitempty"`
 }
 
 // Auth represents authentication tokens
@@ -103,6 +107,9 @@ func applyDefaults(cfg *Config) {
 	}
 	if cfg.InferenceURL == "" {
 		cfg.InferenceURL = DefaultInferenceURL
+	}
+	if cfg.AnnotatorURL == "" {
+		cfg.AnnotatorURL = DefaultAnnotatorURL
 	}
 	if cfg.APIProjectBaseURL == "" {
 		cfg.APIProjectBaseURL = DefaultAPIProjectBaseURL
