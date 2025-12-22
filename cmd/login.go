@@ -30,19 +30,17 @@ This will store your authentication tokens locally.`,
 		}
 
 		if cfg.SupabaseURL == "" {
-			return fmt.Errorf("supabase_url not configured. Please set it in your config file")
+			return fmt.Errorf("supabase_url not configured. This binary may not have been built with credentials")
 		}
 
 		email := loginEmail
 		password := loginPassword
 
-		// Prompt for email if not provided
 		if email == "" {
 			fmt.Print("Email: ")
 			fmt.Scanln(&email)
 		}
 
-		// Prompt for password if not provided
 		if password == "" {
 			fmt.Print("Password: ")
 			bytePassword, err := term.ReadPassword(int(syscall.Stdin))
@@ -53,7 +51,7 @@ This will store your authentication tokens locally.`,
 			fmt.Println()
 		}
 
-		authData, err := auth.Login(email, password, cfg.SupabaseURL)
+		authData, err := auth.Login(email, password, cfg)
 		if err != nil {
 			return fmt.Errorf("login failed: %w", err)
 		}
@@ -77,4 +75,3 @@ func init() {
 	loginCmd.Flags().StringVar(&loginEmail, "email", "", "Email address")
 	loginCmd.Flags().StringVar(&loginPassword, "password", "", "Password")
 }
-

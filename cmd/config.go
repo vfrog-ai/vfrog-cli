@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"fmt"
+	"time"
 
 	"github.com/spf13/cobra"
 
@@ -21,6 +22,51 @@ var configSetCmd = &cobra.Command{
 	Use:   "set",
 	Short: "Set a configuration value",
 	Long:  `Set a configuration value such as organisation_id or project_id.`,
+}
+
+// configShowCmd represents the config show command
+var configShowCmd = &cobra.Command{
+	Use:   "show",
+	Short: "Show current configuration",
+	Long:  `Show current CLI configuration including environment and credentials status.`,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		cfg, err := config.Load()
+		if err != nil {
+			return fmt.Errorf("failed to load config: %w", err)
+		}
+
+		info := map[string]interface{}{
+			"version":          config.Version,
+			"environment":      config.Environment,
+			"organisation_id":  cfg.OrganisationID,
+			"project_id":       cfg.ProjectID,
+			"supabase_url":     cfg.SupabaseURL,
+			"api_url":          cfg.APIURL,
+			"inference_url":    cfg.InferenceURL,
+			"platform_host":    cfg.PlatformHost,
+			"authenticated":    cfg.Auth != nil && cfg.Auth.AccessToken != "",
+		}
+
+		if jsonOutput {
+			return output.PrintJSON(info)
+		}
+
+		fmt.Printf("Version:         %s\n", config.Version)
+		fmt.Printf("Environment:     %s\n", config.Environment)
+		fmt.Printf("Organisation ID: %s\n", cfg.OrganisationID)
+		fmt.Printf("Project ID:      %s\n", cfg.ProjectID)
+		fmt.Printf("Supabase URL:    %s\n", cfg.SupabaseURL)
+		fmt.Printf("API URL:         %s\n", cfg.APIURL)
+		fmt.Printf("Inference URL:   %s\n", cfg.InferenceURL)
+		fmt.Printf("Platform Host:   %s\n", cfg.PlatformHost)
+		if cfg.Auth != nil && cfg.Auth.AccessToken != "" {
+			fmt.Printf("Authenticated:   yes (expires: %s)\n", cfg.Auth.ExpiresAt.Format(time.RFC3339))
+		} else {
+			fmt.Printf("Authenticated:   no\n")
+		}
+
+		return nil
+	},
 }
 
 // configSetOrganisationCmd represents the config set organisation command
@@ -88,10 +134,10 @@ var configSetProjectCmd = &cobra.Command{
 func init() {
 	rootCmd.AddCommand(configCmd)
 	configCmd.AddCommand(configSetCmd)
+	configCmd.AddCommand(configShowCmd)
 	configSetCmd.AddCommand(configSetOrganisationCmd)
 	configSetCmd.AddCommand(configSetProjectCmd)
 
 	configSetOrganisationCmd.Flags().String("organisation_id", "", "Organisation ID")
 	configSetProjectCmd.Flags().String("project_id", "", "Project ID")
 }
-

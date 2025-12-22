@@ -1,21 +1,22 @@
 # Binaries
 vfrog
-vfrog.exe
+vfrog-dev
+vfrog-staging
 *.exe
 *.dll
 *.so
 *.dylib
 
-# Test binary, built with `go test -c`
+# Test binary
 *.test
 
-# Output of the go coverage tool
+# Coverage
 *.out
 
-# Dependency directories
+# Dependencies
 vendor/
 
-# Go workspace file
+# Go workspace
 go.work
 
 # IDE
@@ -29,6 +30,5 @@ go.work
 .DS_Store
 Thumbs.db
 
-# Config (contains secrets)
-config.json
-
+# Dist folder
+dist/

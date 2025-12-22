@@ -7,8 +7,8 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/vfrog/vfrog-cli/internal/api/supabase"
 	"github.com/vfrog/vfrog-cli/internal/api/inference"
+	"github.com/vfrog/vfrog-cli/internal/api/supabase"
 	"github.com/vfrog/vfrog-cli/internal/config"
 	"github.com/vfrog/vfrog-cli/internal/output"
 )
@@ -77,7 +77,7 @@ var iterationsCreateCmd = &cobra.Command{
 		objectID := args[0]
 		randomN, _ := cmd.Flags().GetInt("random")
 		if randomN <= 0 {
-			randomN = 20 // Default
+			randomN = 20
 		}
 
 		cfg, err := config.Load()
@@ -94,7 +94,6 @@ var iterationsCreateCmd = &cobra.Command{
 			return fmt.Errorf("failed to create Supabase client: %w", err)
 		}
 
-		// Get existing iterations to determine next iteration number
 		existingIterations, err := client.Get("project_iteration", map[string]string{
 			"product_image_id": fmt.Sprintf("eq.%s", objectID),
 			"select":           "iteration_number",
@@ -112,7 +111,6 @@ var iterationsCreateCmd = &cobra.Command{
 			}
 		}
 
-		// Get all dataset images for the project
 		datasetImages, err := client.Get("dataset_images", map[string]string{
 			"project_id": fmt.Sprintf("eq.%s", cfg.ProjectID),
 			"select":     "id",
@@ -125,7 +123,6 @@ var iterationsCreateCmd = &cobra.Command{
 			return fmt.Errorf("no dataset images found in project")
 		}
 
-		// Randomly select N dataset images
 		rand.Seed(time.Now().UnixNano())
 		selectedCount := randomN
 		if selectedCount > len(datasetImages) {
@@ -138,7 +135,6 @@ var iterationsCreateCmd = &cobra.Command{
 			selectedImages[i] = datasetImages[idx]
 		}
 
-		// Create the iteration
 		iterationData := map[string]interface{}{
 			"project_id":       cfg.ProjectID,
 			"product_image_id": objectID,
@@ -153,7 +149,6 @@ var iterationsCreateCmd = &cobra.Command{
 
 		iterationID := iteration["id"].(string)
 
-		// Link selected dataset images to the iteration
 		for _, img := range selectedImages {
 			linkData := map[string]interface{}{
 				"project_iteration_id": iterationID,
@@ -161,7 +156,6 @@ var iterationsCreateCmd = &cobra.Command{
 			}
 			_, err := client.Post("project_iteration_dataset_images", linkData)
 			if err != nil {
-				// Log but continue - some links might already exist
 				fmt.Fprintf(cmd.ErrOrStderr(), "Warning: failed to link dataset image %v: %v\n", img["id"], err)
 			}
 		}
@@ -234,7 +228,6 @@ var iterationsSSATCmd = &cobra.Command{
 			return fmt.Errorf("failed to create Supabase client: %w", err)
 		}
 
-		// Get iteration details
 		iterations, err := client.Get("project_iteration", map[string]string{
 			"id":     fmt.Sprintf("eq.%s", iterationID),
 			"select": "project_id,product_image_id",
@@ -256,7 +249,6 @@ var iterationsSSATCmd = &cobra.Command{
 			platformHost = "https://platform.vfrog.ai"
 		}
 
-		// Platform route pattern: /org/{orgId}/proj/{projectId}/prod/{productId}/iter/{iterationId}
 		url := fmt.Sprintf("%s/org/%s/proj/%s/prod/%s/iter/%s", platformHost, cfg.OrganisationID, projectID, productID, iterationID)
 
 		if jsonOutput {
@@ -289,7 +281,6 @@ var iterationsHaloCmd = &cobra.Command{
 			return fmt.Errorf("failed to create Supabase client: %w", err)
 		}
 
-		// Get iteration details
 		iterations, err := client.Get("project_iteration", map[string]string{
 			"id":     fmt.Sprintf("eq.%s", iterationID),
 			"select": "project_id",
@@ -310,7 +301,6 @@ var iterationsHaloCmd = &cobra.Command{
 			platformHost = "https://platform.vfrog.ai"
 		}
 
-		// Platform HALO route pattern: /org/{orgId}/proj/{projectId}/halo?iteration={iterationId}
 		url := fmt.Sprintf("%s/org/%s/proj/%s/halo?iteration=%s", platformHost, cfg.OrganisationID, projectID, iterationID)
 
 		if jsonOutput {
@@ -351,7 +341,6 @@ var iterationTrainCmd = &cobra.Command{
 			return fmt.Errorf("failed to create Supabase client: %w", err)
 		}
 
-		// Get iteration details
 		iterations, err := client.Get("project_iteration", map[string]string{
 			"id":     fmt.Sprintf("eq.%s", iterationID),
 			"select": "project_id,product_image_id,iteration_number",
@@ -368,7 +357,6 @@ var iterationTrainCmd = &cobra.Command{
 		projectID := iter["project_id"].(string)
 		productID := iter["product_image_id"].(string)
 
-		// Get project details
 		projects, err := client.Get("projects", map[string]string{
 			"id":     fmt.Sprintf("eq.%s", projectID),
 			"select": "title",
@@ -383,7 +371,6 @@ var iterationTrainCmd = &cobra.Command{
 
 		projectName := projects[0]["title"].(string)
 
-		// Get dataset images for this iteration
 		datasetImageLinks, err := client.Get("project_iteration_dataset_images", map[string]string{
 			"project_iteration_id": fmt.Sprintf("eq.%s", iterationID),
 			"select":               "dataset_image_id,dataset_images(file_url)",
@@ -402,7 +389,6 @@ var iterationTrainCmd = &cobra.Command{
 			}
 		}
 
-		// Get annotated images
 		annotatedImages, err := client.Get("project_iteration_annotated_images", map[string]string{
 			"project_iteration_id": fmt.Sprintf("eq.%s", iterationID),
 			"select":               "dataset_images_id,annotation",
@@ -419,17 +405,16 @@ var iterationTrainCmd = &cobra.Command{
 			})
 		}
 
-		// Build training payload
 		callbackURL := ""
 		if cfg.APIProjectBaseURL != "" {
 			callbackURL = fmt.Sprintf("%s/api/v1/callback/project-status-update", cfg.APIProjectBaseURL)
 		}
 
-		// Submit training task
 		inferenceClient, err := inference.NewClient(cfg, "")
 		if err != nil {
 			return fmt.Errorf("failed to create inference client: %w", err)
 		}
+
 		taskResponse, err := inferenceClient.SubmitTrainingTask(map[string]interface{}{
 			"project_iteration_id": iterationID,
 			"organisation_id":      cfg.OrganisationID,
@@ -443,7 +428,6 @@ var iterationTrainCmd = &cobra.Command{
 			return fmt.Errorf("failed to submit training task: %w", err)
 		}
 
-		// Update iteration with task_id and training status
 		updateData := map[string]interface{}{
 			"task_id":        taskResponse["task_id"],
 			"trained_status": "training",
@@ -478,4 +462,3 @@ func init() {
 	iterationsHaloCmd.Flags().String("iteration_id", "", "Iteration ID")
 	iterationTrainCmd.Flags().String("iteration_id", "", "Iteration ID to train")
 }
-

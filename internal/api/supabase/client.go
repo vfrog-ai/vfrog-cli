@@ -17,6 +17,7 @@ import (
 type Client struct {
 	baseURL    string
 	apiKey     string
+	cfg        *config.Config
 	httpClient *http.Client
 }
 
@@ -25,6 +26,7 @@ func NewClient(cfg *config.Config) (*Client, error) {
 	if cfg.SupabaseURL == "" {
 		return nil, fmt.Errorf("supabase_url not configured")
 	}
+
 	if cfg.SupabasePublishableKey == "" {
 		return nil, fmt.Errorf("supabase_publishable_key not configured")
 	}
@@ -32,19 +34,20 @@ func NewClient(cfg *config.Config) (*Client, error) {
 	return &Client{
 		baseURL:    cfg.SupabaseURL,
 		apiKey:     cfg.SupabasePublishableKey,
+		cfg:        cfg,
 		httpClient: &http.Client{Timeout: 30 * time.Second},
 	}, nil
 }
 
 // Get performs a GET request to a Supabase table
 func (c *Client) Get(table string, params map[string]string) ([]map[string]interface{}, error) {
-	accessToken, err := c.getAccessToken()
+	accessToken, err := auth.GetValidToken(c.cfg)
 	if err != nil {
 		return nil, err
 	}
 
 	reqURL := fmt.Sprintf("%s/rest/v1/%s", c.baseURL, table)
-	
+
 	req, err := http.NewRequest("GET", reqURL, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
@@ -55,7 +58,6 @@ func (c *Client) Get(table string, params map[string]string) ([]map[string]inter
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Prefer", "return=representation")
 
-	// Add query parameters
 	if len(params) > 0 {
 		q := req.URL.Query()
 		for k, v := range params {
@@ -89,13 +91,13 @@ func (c *Client) Get(table string, params map[string]string) ([]map[string]inter
 
 // Post performs a POST request to create a record
 func (c *Client) Post(table string, data map[string]interface{}) (map[string]interface{}, error) {
-	accessToken, err := c.getAccessToken()
+	accessToken, err := auth.GetValidToken(c.cfg)
 	if err != nil {
 		return nil, err
 	}
 
 	reqURL := fmt.Sprintf("%s/rest/v1/%s", c.baseURL, table)
-	
+
 	jsonData, err := json.Marshal(data)
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal data: %w", err)
@@ -140,13 +142,13 @@ func (c *Client) Post(table string, data map[string]interface{}) (map[string]int
 
 // Patch performs a PATCH request to update a record
 func (c *Client) Patch(table string, id string, data map[string]interface{}) error {
-	accessToken, err := c.getAccessToken()
+	accessToken, err := auth.GetValidToken(c.cfg)
 	if err != nil {
 		return err
 	}
 
 	reqURL := fmt.Sprintf("%s/rest/v1/%s?id=eq.%s", c.baseURL, table, url.QueryEscape(id))
-	
+
 	jsonData, err := json.Marshal(data)
 	if err != nil {
 		return fmt.Errorf("failed to marshal data: %w", err)
@@ -182,13 +184,13 @@ func (c *Client) Patch(table string, id string, data map[string]interface{}) err
 
 // Delete performs a DELETE request
 func (c *Client) Delete(table string, id string) error {
-	accessToken, err := c.getAccessToken()
+	accessToken, err := auth.GetValidToken(c.cfg)
 	if err != nil {
 		return err
 	}
 
 	reqURL := fmt.Sprintf("%s/rest/v1/%s?id=eq.%s", c.baseURL, table, url.QueryEscape(id))
-	
+
 	req, err := http.NewRequest("DELETE", reqURL, nil)
 	if err != nil {
 		return fmt.Errorf("failed to create request: %w", err)
@@ -211,13 +213,3 @@ func (c *Client) Delete(table string, id string) error {
 
 	return nil
 }
-
-// getAccessToken retrieves a valid access token (helper for internal use)
-func (c *Client) getAccessToken() (string, error) {
-	cfg, err := config.Load()
-	if err != nil {
-		return "", err
-	}
-	return auth.GetValidToken(cfg)
-}
-

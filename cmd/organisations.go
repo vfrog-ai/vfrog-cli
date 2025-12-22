@@ -26,10 +26,8 @@ var organisationsCmd = &cobra.Command{
 			return fmt.Errorf("failed to create Supabase client: %w", err)
 		}
 
-		// Get user's organisations via organisation_user join
-		// RLS will automatically filter by authenticated user
 		orgUsers, err := client.Get("organisation_user", map[string]string{
-			"select": "organisation_id,organisation(*)",
+			"select": "organisation_id,organisation(id,name)",
 		})
 		if err != nil {
 			return fmt.Errorf("failed to get organisations: %w", err)
@@ -39,12 +37,11 @@ var organisationsCmd = &cobra.Command{
 			return output.PrintJSON(orgUsers)
 		}
 
-		// Simple table output
 		fmt.Println("Organisations:")
 		for _, ou := range orgUsers {
 			if org, ok := ou["organisation"].(map[string]interface{}); ok {
 				if name, ok := org["name"].(string); ok {
-					fmt.Printf("  - %s (ID: %v)\n", name, ou["organisation_id"])
+					fmt.Printf("  - %s (ID: %v)\n", name, org["id"])
 				}
 			}
 		}
@@ -56,4 +53,3 @@ var organisationsCmd = &cobra.Command{
 func init() {
 	rootCmd.AddCommand(organisationsCmd)
 }
-

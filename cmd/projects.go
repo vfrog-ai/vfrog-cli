@@ -82,7 +82,6 @@ var projectsCreateCmd = &cobra.Command{
 			return fmt.Errorf("failed to create Supabase client: %w", err)
 		}
 
-		// Get current user ID from JWT token
 		accessToken, err := auth.GetValidToken(cfg)
 		if err != nil {
 			return fmt.Errorf("failed to get access token: %w", err)
@@ -117,4 +116,3 @@ func init() {
 	projectsCmd.AddCommand(projectsListCmd)
 	projectsCmd.AddCommand(projectsCreateCmd)
 }
-

@@ -1,0 +1,219 @@
+name: Release vfrog CLI
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to release (e.g., v0.1.0)'
+        required: true
+        type: string
+
+permissions:
+  contents: write
+  id-token: write
+
+jobs:
+  build:
+    name: Build ${{ matrix.env }} binaries
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        env: [dev, staging, production]
+        include:
+          - env: dev
+            gcp_project: development-481611-t8
+            workload_identity_provider: projects/700190332848/locations/global/workloadIdentityPools/dev-github-pool/providers/github-provider
+            service_account: dev-github-deployer@development-481611-t8.iam.gserviceaccount.com
+            binary_suffix: '-dev'
+            api_url: 'https://api-dev.vfrog.ai'
+            inference_url: 'https://inference-dev.vfrog.ai'
+            api_project_base_url: 'https://api-dev.vfrog.ai'
+            platform_host: 'https://platform-dev.vfrog.ai'
+            supabase_url_secret: 'dev-supabase-url'
+            supabase_key_secret: 'dev-supabase-publishable-key'
+          - env: staging
+            gcp_project: staging-vfrog
+            workload_identity_provider: projects/123456789/locations/global/workloadIdentityPools/staging-github-pool/providers/github-provider
+            service_account: staging-github-deployer@staging-vfrog.iam.gserviceaccount.com
+            binary_suffix: '-staging'
+            api_url: 'https://api-staging.vfrog.ai'
+            inference_url: 'https://inference-staging.vfrog.ai'
+            api_project_base_url: 'https://api-staging.vfrog.ai'
+            platform_host: 'https://platform-staging.vfrog.ai'
+            supabase_url_secret: 'staging-supabase-url'
+            supabase_key_secret: 'staging-supabase-publishable-key'
+          - env: production
+            gcp_project: production-vfrog
+            workload_identity_provider: projects/987654321/locations/global/workloadIdentityPools/prod-github-pool/providers/github-provider
+            service_account: prod-github-deployer@production-vfrog.iam.gserviceaccount.com
+            binary_suffix: ''
+            api_url: 'https://api.vfrog.ai'
+            inference_url: 'https://inference.vfrog.ai'
+            api_project_base_url: 'https://api.vfrog.ai'
+            platform_host: 'https://platform.vfrog.ai'
+            supabase_url_secret: 'prod-supabase-url'
+            supabase_key_secret: 'prod-supabase-publishable-key'
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+
+      - name: Authenticate to Google Cloud (Workload Identity)
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ matrix.workload_identity_provider }}
+          service_account: ${{ matrix.service_account }}
+          create_credentials_file: true
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+        with:
+          project_id: ${{ matrix.gcp_project }}
+
+      - name: Load secrets from GCP Secret Manager
+        run: |
+          set -euo pipefail
+
+          SUPABASE_URL="$(gcloud secrets versions access latest --secret='${{ matrix.supabase_url_secret }}' --project='${{ matrix.gcp_project }}')"
+          echo "SUPABASE_URL=${SUPABASE_URL}" >> "$GITHUB_ENV"
+
+          SUPABASE_KEY="$(gcloud secrets versions access latest --secret='${{ matrix.supabase_key_secret }}' --project='${{ matrix.gcp_project }}')"
+          echo "SUPABASE_KEY=${SUPABASE_KEY}" >> "$GITHUB_ENV"
+
+      - name: Determine version
+        id: version
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "version=${{ inputs.version }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "version=${GITHUB_REF#refs/tags/}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Build binaries for all platforms
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          export CGO_ENABLED=0
+          LDFLAGS="-s -w"
+          LDFLAGS="${LDFLAGS} -X 'github.com/vfrog/vfrog-cli/internal/config.Version=${VERSION}'"
+          LDFLAGS="${LDFLAGS} -X 'github.com/vfrog/vfrog-cli/internal/config.Environment=${{ matrix.env }}'"
+          LDFLAGS="${LDFLAGS} -X 'github.com/vfrog/vfrog-cli/internal/config.DefaultSupabaseURL=${SUPABASE_URL}'"
+          LDFLAGS="${LDFLAGS} -X 'github.com/vfrog/vfrog-cli/internal/config.DefaultSupabasePublishableKey=${SUPABASE_KEY}'"
+          LDFLAGS="${LDFLAGS} -X 'github.com/vfrog/vfrog-cli/internal/config.DefaultAPIURL=${{ matrix.api_url }}'"
+          LDFLAGS="${LDFLAGS} -X 'github.com/vfrog/vfrog-cli/internal/config.DefaultInferenceURL=${{ matrix.inference_url }}'"
+          LDFLAGS="${LDFLAGS} -X 'github.com/vfrog/vfrog-cli/internal/config.DefaultAPIProjectBaseURL=${{ matrix.api_project_base_url }}'"
+          LDFLAGS="${LDFLAGS} -X 'github.com/vfrog/vfrog-cli/internal/config.DefaultPlatformHost=${{ matrix.platform_host }}'"
+
+          mkdir -p dist
+
+          # Darwin (macOS) ARM64
+          GOOS=darwin GOARCH=arm64 go build -ldflags "${LDFLAGS}" -o "dist/vfrog${{ matrix.binary_suffix }}-darwin-arm64" ./main.go
+
+          # Darwin (macOS) AMD64
+          GOOS=darwin GOARCH=amd64 go build -ldflags "${LDFLAGS}" -o "dist/vfrog${{ matrix.binary_suffix }}-darwin-amd64" ./main.go
+
+          # Linux AMD64
+          GOOS=linux GOARCH=amd64 go build -ldflags "${LDFLAGS}" -o "dist/vfrog${{ matrix.binary_suffix }}-linux-amd64" ./main.go
+
+          # Linux ARM64
+          GOOS=linux GOARCH=arm64 go build -ldflags "${LDFLAGS}" -o "dist/vfrog${{ matrix.binary_suffix }}-linux-arm64" ./main.go
+
+          # Windows AMD64
+          GOOS=windows GOARCH=amd64 go build -ldflags "${LDFLAGS}" -o "dist/vfrog${{ matrix.binary_suffix }}-windows-amd64.exe" ./main.go
+
+          ls -la dist/
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: binaries-${{ matrix.env }}
+          path: dist/
+          retention-days: 1
+
+  release:
+    name: Create GitHub Release
+    needs: build
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: binaries
+          merge-multiple: true
+
+      - name: List binaries
+        run: ls -la binaries/
+
+      - name: Determine version
+        id: version
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "version=${{ inputs.version }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "version=${GITHUB_REF#refs/tags/}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Create checksums
+        run: |
+          cd binaries
+          sha256sum * > checksums.txt
+          cat checksums.txt
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: ${{ steps.version.outputs.version }}
+          name: vfrog CLI ${{ steps.version.outputs.version }}
+          draft: false
+          prerelease: ${{ contains(steps.version.outputs.version, '-') }}
+          files: |
+            binaries/*
+          body: |
+            ## vfrog CLI ${{ steps.version.outputs.version }}
+
+            ### Installation
+
+            **Production (recommended for most users):**
+            ```bash
+            # macOS (Apple Silicon)
+            curl -L https://github.com/vfrog/vfrog-cli/releases/download/${{ steps.version.outputs.version }}/vfrog-darwin-arm64 -o vfrog
+            chmod +x vfrog && sudo mv vfrog /usr/local/bin/
+
+            # macOS (Intel)
+            curl -L https://github.com/vfrog/vfrog-cli/releases/download/${{ steps.version.outputs.version }}/vfrog-darwin-amd64 -o vfrog
+            chmod +x vfrog && sudo mv vfrog /usr/local/bin/
+
+            # Linux (AMD64)
+            curl -L https://github.com/vfrog/vfrog-cli/releases/download/${{ steps.version.outputs.version }}/vfrog-linux-amd64 -o vfrog
+            chmod +x vfrog && sudo mv vfrog /usr/local/bin/
+            ```
+
+            **Development environment:**
+            ```bash
+            # macOS (Apple Silicon)
+            curl -L https://github.com/vfrog/vfrog-cli/releases/download/${{ steps.version.outputs.version }}/vfrog-dev-darwin-arm64 -o vfrog-dev
+            chmod +x vfrog-dev && sudo mv vfrog-dev /usr/local/bin/
+            ```
+
+            **Staging environment:**
+            ```bash
+            # macOS (Apple Silicon)
+            curl -L https://github.com/vfrog/vfrog-cli/releases/download/${{ steps.version.outputs.version }}/vfrog-staging-darwin-arm64 -o vfrog-staging
+            chmod +x vfrog-staging && sudo mv vfrog-staging /usr/local/bin/
+            ```
+
+            ### Verify Installation
+            ```bash
+            vfrog version
+            vfrog --help
+            ```
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -24,16 +24,15 @@ var objectsCmd = &cobra.Command{
 var objectsCreateCmd = &cobra.Command{
 	Use:   "create [url]",
 	Short: "Create a new object",
-	Long:  `Create a new object (product image) from a URL. In v0.1, only URLs are supported (local paths will error).`,
+	Long:  `Create a new object (product image) from a URL. In v0.1, only URLs are supported.`,
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		imageURL := args[0]
 		label, _ := cmd.Flags().GetString("label")
 		externalID, _ := cmd.Flags().GetString("external_id")
 
-		// Validate URL
 		if _, err := url.Parse(imageURL); err != nil {
-			return fmt.Errorf("invalid URL: %s (local paths not supported in v0.1)", imageURL)
+			return fmt.Errorf("invalid URL: %s", imageURL)
 		}
 
 		cfg, err := config.Load()
@@ -50,7 +49,6 @@ var objectsCreateCmd = &cobra.Command{
 			return fmt.Errorf("failed to create Supabase client: %w", err)
 		}
 
-		// Get current user ID from JWT
 		accessToken, err := auth.GetValidToken(cfg)
 		if err != nil {
 			return fmt.Errorf("failed to get access token: %w", err)
@@ -60,7 +58,6 @@ var objectsCreateCmd = &cobra.Command{
 			return fmt.Errorf("failed to get user ID: %w", err)
 		}
 
-		// Extract filename from URL
 		filename := imageURL
 		if parsedURL, err := url.Parse(imageURL); err == nil {
 			pathParts := strings.Split(parsedURL.Path, "/")
@@ -69,7 +66,6 @@ var objectsCreateCmd = &cobra.Command{
 			}
 		}
 
-		// Determine mime type from URL extension
 		mimeType := "image/jpeg"
 		if strings.HasSuffix(strings.ToLower(filename), ".png") {
 			mimeType = "image/png"
@@ -82,12 +78,11 @@ var objectsCreateCmd = &cobra.Command{
 			"user_id":     userID,
 			"file_name":   filename,
 			"file_path":   imageURL,
-			"file_size":   0, // Unknown from URL
+			"file_size":   0,
 			"mime_type":   mimeType,
 			"processed":   false,
 		}
 
-		// Add optional fields if provided
 		if label != "" {
 			objectData["label"] = label
 		}
@@ -202,4 +197,3 @@ func init() {
 	objectsCreateCmd.Flags().String("external_id", "", "External ID for the object")
 	objectsDeleteCmd.Flags().String("object_id", "", "Object ID to delete")
 }
-

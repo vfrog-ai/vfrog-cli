@@ -23,7 +23,7 @@ type Client struct {
 func NewClient(cfg *config.Config, apiKeyOverride string) (*Client, error) {
 	inferenceURL := cfg.InferenceURL
 	if inferenceURL == "" {
-		inferenceURL = "https://inf-dev-01.vfrog.ai"
+		inferenceURL = "https://inference.vfrog.ai"
 	}
 
 	apiKey := apiKeyOverride
@@ -83,4 +83,3 @@ func (c *Client) SubmitTrainingTask(payload map[string]interface{}) (map[string]
 
 	return result, nil
 }
-

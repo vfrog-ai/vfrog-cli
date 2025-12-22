@@ -12,14 +12,18 @@ import (
 )
 
 // Login performs Supabase password authentication
-func Login(email, password, supabaseURL string) (*config.Auth, error) {
-	url := fmt.Sprintf("%s/auth/v1/token?grant_type=password", supabaseURL)
-	
+func Login(email, password string, cfg *config.Config) (*config.Auth, error) {
+	if cfg.SupabaseURL == "" {
+		return nil, fmt.Errorf("supabase_url not configured. This binary may not have been built with credentials")
+	}
+
+	url := fmt.Sprintf("%s/auth/v1/token?grant_type=password", cfg.SupabaseURL)
+
 	payload := map[string]string{
 		"email":    email,
 		"password": password,
 	}
-	
+
 	jsonData, err := json.Marshal(payload)
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal login payload: %w", err)
@@ -31,6 +35,7 @@ func Login(email, password, supabaseURL string) (*config.Auth, error) {
 	}
 
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("apikey", cfg.SupabasePublishableKey)
 
 	client := &http.Client{Timeout: 30 * time.Second}
 	resp, err := client.Do(req)
@@ -68,13 +73,17 @@ func Login(email, password, supabaseURL string) (*config.Auth, error) {
 }
 
 // RefreshToken refreshes the access token using the refresh token
-func RefreshToken(refreshToken, supabaseURL string) (*config.Auth, error) {
-	url := fmt.Sprintf("%s/auth/v1/token?grant_type=refresh_token", supabaseURL)
-	
+func RefreshToken(refreshToken string, cfg *config.Config) (*config.Auth, error) {
+	if cfg.SupabaseURL == "" {
+		return nil, fmt.Errorf("supabase_url not configured")
+	}
+
+	url := fmt.Sprintf("%s/auth/v1/token?grant_type=refresh_token", cfg.SupabaseURL)
+
 	payload := map[string]string{
 		"refresh_token": refreshToken,
 	}
-	
+
 	jsonData, err := json.Marshal(payload)
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal refresh payload: %w", err)
@@ -86,6 +95,7 @@ func RefreshToken(refreshToken, supabaseURL string) (*config.Auth, error) {
 	}
 
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("apikey", cfg.SupabasePublishableKey)
 
 	client := &http.Client{Timeout: 30 * time.Second}
 	resp, err := client.Do(req)
@@ -130,8 +140,7 @@ func GetValidToken(cfg *config.Config) (string, error) {
 
 	// Check if token is expired (with 5 minute buffer)
 	if time.Now().Add(5 * time.Minute).After(cfg.Auth.ExpiresAt) {
-		// Refresh token
-		newAuth, err := RefreshToken(cfg.Auth.RefreshToken, cfg.SupabaseURL)
+		newAuth, err := RefreshToken(cfg.Auth.RefreshToken, cfg)
 		if err != nil {
 			return "", fmt.Errorf("failed to refresh token: %w", err)
 		}
@@ -144,4 +153,3 @@ func GetValidToken(cfg *config.Config) (string, error) {
 
 	return cfg.Auth.AccessToken, nil
 }
-

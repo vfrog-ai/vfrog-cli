@@ -24,7 +24,7 @@ var datasetImagesCmd = &cobra.Command{
 var datasetImagesUploadCmd = &cobra.Command{
 	Use:   "upload [url1] [url2] ...",
 	Short: "Upload dataset images from URLs",
-	Long:  `Upload dataset images to your project from URLs. In v0.1, only URLs are supported (local paths will error).`,
+	Long:  `Upload dataset images to your project from URLs. In v0.1, only URLs are supported.`,
 	Args:  cobra.MinimumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		cfg, err := config.Load()
@@ -41,7 +41,6 @@ var datasetImagesUploadCmd = &cobra.Command{
 			return fmt.Errorf("failed to create Supabase client: %w", err)
 		}
 
-		// Get current user ID from JWT
 		accessToken, err := auth.GetValidToken(cfg)
 		if err != nil {
 			return fmt.Errorf("failed to get access token: %w", err)
@@ -54,12 +53,10 @@ var datasetImagesUploadCmd = &cobra.Command{
 		var results []map[string]interface{}
 
 		for _, imageURL := range args {
-			// Validate URL
 			if _, err := url.Parse(imageURL); err != nil {
 				return fmt.Errorf("invalid URL: %s", imageURL)
 			}
 
-			// Extract filename from URL
 			filename := imageURL
 			if parsedURL, err := url.Parse(imageURL); err == nil {
 				pathParts := strings.Split(parsedURL.Path, "/")
@@ -184,4 +181,3 @@ func init() {
 
 	datasetImagesDeleteCmd.Flags().String("dataset_image_id", "", "Dataset image ID to delete")
 }
-

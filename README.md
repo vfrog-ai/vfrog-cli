@@ -4,44 +4,112 @@ Command-line interface for the vfrog platform. Provides fast, reliable, scriptab
 
 ## Installation
 
-### From Source
+### Download Binary (Recommended)
+
+Download the appropriate binary for your environment:
+
+**Production (recommended for most users):**
 
 ```bash
-git clone https://github.com/vfrog/vfrog-cli.git
-cd vfrog-cli
-go build -o vfrog ./main.go
-sudo mv vfrog /usr/local/bin/
+# macOS (Apple Silicon)
+curl -L https://github.com/vfrog/vfrog-cli/releases/latest/download/vfrog-darwin-arm64 -o vfrog
+chmod +x vfrog && sudo mv vfrog /usr/local/bin/
+
+# macOS (Intel)
+curl -L https://github.com/vfrog/vfrog-cli/releases/latest/download/vfrog-darwin-amd64 -o vfrog
+chmod +x vfrog && sudo mv vfrog /usr/local/bin/
+
+# Linux (AMD64)
+curl -L https://github.com/vfrog/vfrog-cli/releases/latest/download/vfrog-linux-amd64 -o vfrog
+chmod +x vfrog && sudo mv vfrog /usr/local/bin/
 ```
 
-### Binary Releases
+**Development environment:**
 
-Binary releases will be available for macOS, Linux, and Windows (coming soon).
+```bash
+# macOS (Apple Silicon)
+curl -L https://github.com/vfrog/vfrog-cli/releases/latest/download/vfrog-dev-darwin-arm64 -o vfrog-dev
+chmod +x vfrog-dev && sudo mv vfrog-dev /usr/local/bin/
+```
 
-## Configuration
+**Staging environment:**
 
-The CLI stores configuration in `~/.vfrog/config.json`. You can configure:
+```bash
+# macOS (Apple Silicon)
+curl -L https://github.com/vfrog/vfrog-cli/releases/latest/download/vfrog-staging-darwin-arm64 -o vfrog-staging
+chmod +x vfrog-staging && sudo mv vfrog-staging /usr/local/bin/
+```
 
-- `supabase_url`: Your Supabase project URL
-- `supabase_publishable_key`: Your Supabase publishable key
-- `organisation_id`: Default organisation ID
-- `project_id`: Default project ID
-- `api_url`: vfrog API URL (default: https://api-dev.vfrog.ai)
-- `inference_url`: Inference server URL (default: https://inf-dev-01.vfrog.ai)
-- `inference_api_key`: Inference API key
-- `api_key`: General API key for inference requests
-- `platform_host`: Platform host URL (for generating SSAT/HALO links)
+### Verify Installation
+
+```bash
+vfrog version
+vfrog --help
+```
+
+### Shell Autocompletion
+
+Enable autocompletion for your shell:
+
+**Zsh (macOS default):**
+
+```bash
+# Add to your ~/.zshrc
+echo 'source <(vfrog completion zsh)' >> ~/.zshrc
+
+# Or generate a completion file (recommended for faster shell startup)
+vfrog completion zsh > "${fpath[1]}/_vfrog"
+
+# Reload shell
+source ~/.zshrc
+```
+
+**Bash:**
+
+```bash
+# Linux: Add to ~/.bashrc
+echo 'source <(vfrog completion bash)' >> ~/.bashrc
+
+# macOS: Install bash-completion first
+brew install bash-completion@2
+echo 'source <(vfrog completion bash)' >> ~/.bash_profile
+
+# Reload shell
+source ~/.bashrc  # or ~/.bash_profile on macOS
+```
+
+**Fish:**
+
+```bash
+vfrog completion fish > ~/.config/fish/completions/vfrog.fish
+```
+
+**PowerShell:**
+
+```powershell
+vfrog completion powershell | Out-String | Invoke-Expression
+# Or add to your PowerShell profile for persistence
+```
+
+## Available Binaries
+
+Each release includes three binaries configured for different environments:
+
+| Binary          | Environment | Supabase            | API URL                        |
+| --------------- | ----------- | ------------------- | ------------------------------ |
+| `vfrog`         | production  | Production Supabase | `https://api.vfrog.ai`         |
+| `vfrog-staging` | staging     | Staging Supabase    | `https://api-staging.vfrog.ai` |
+| `vfrog-dev`     | development | Dev Supabase        | `https://api-dev.vfrog.ai`     |
+
+Credentials are baked into each binary at build time from GCP Secret Manager.
 
 ## Authentication
-
-### Interactive Login
 
 ```bash
 vfrog login
 ```
 
-This will prompt for your email and password and store authentication tokens locally.
-
-### Using Flags
+This will prompt for your email and password and store authentication tokens locally in `~/.vfrog/config.json`.
 
 ```bash
 vfrog login --email user@example.com --password mypassword
@@ -141,12 +209,6 @@ For inference commands, API keys are resolved in this order:
 2. `VFROG_API_KEY` environment variable
 3. `api_key` in `~/.vfrog/config.json`
 
-For training commands, inference API keys are resolved as:
-
-1. `--api-key` flag (if supported)
-2. `VFROG_INFERENCE_API_KEY` environment variable
-3. `inference_api_key` in `~/.vfrog/config.json`
-
 ## JSON Output
 
 All commands support `--json` flag for machine-readable output:
@@ -163,29 +225,40 @@ vfrog projects list --json
 
 ## CI/CD Usage
 
-For CI/CD automation, you can use environment variables:
+For CI/CD automation:
 
 ```bash
-export VFROG_API_KEY=your_api_key
-export VFROG_INFERENCE_API_KEY=your_inference_api_key
-vfrog inference --image_url https://example.com/image.jpg
-```
+# Download the correct binary for your environment
+curl -L https://github.com/vfrog/vfrog-cli/releases/latest/download/vfrog-linux-amd64 -o vfrog
+chmod +x vfrog
 
-Or use stored credentials after logging in:
-
-```bash
+# Login
 vfrog login --email ci@example.com --password $CI_PASSWORD
+
+# Configure context
 vfrog config set organisation --organisation_id $ORG_ID
 vfrog config set project --project_id $PROJECT_ID
+
+# Use the CLI
 vfrog dataset_images upload https://example.com/image.jpg
 ```
 
 ## Development
 
-### Building
+### Building from Source
 
 ```bash
+git clone https://github.com/vfrog/vfrog-cli.git
+cd vfrog-cli
 go build -o vfrog ./main.go
+```
+
+### Building with Custom Credentials
+
+```bash
+LDFLAGS="-X 'github.com/vfrog/vfrog-cli/internal/config.DefaultSupabaseURL=https://your.supabase.co'"
+LDFLAGS="${LDFLAGS} -X 'github.com/vfrog/vfrog-cli/internal/config.DefaultSupabasePublishableKey=your-key'"
+go build -ldflags "${LDFLAGS}" -o vfrog ./main.go
 ```
 
 ### Testing
@@ -200,6 +273,7 @@ go test ./...
 vfrog-cli/
 ├── cmd/              # Cobra commands
 │   ├── root.go
+│   ├── version.go
 │   ├── login.go
 │   ├── config.go
 │   ├── organisations.go
@@ -209,13 +283,15 @@ vfrog-cli/
 │   ├── iterations.go
 │   └── inference.go
 ├── internal/
-│   ├── config/       # Configuration management
-│   ├── auth/         # Authentication
+│   ├── config/       # Configuration management (with build-time defaults)
+│   ├── auth/         # Supabase authentication
 │   ├── api/
 │   │   ├── supabase/ # Supabase PostgREST client
 │   │   ├── vfrogapi/ # vfrog API client
 │   │   └── inference/ # Inference server client
 │   └── output/       # Output formatting
+├── .github/workflows/
+│   └── release.yml   # CI/CD for building and releasing binaries
 └── main.go
 ```
 
@@ -223,10 +299,7 @@ vfrog-cli/
 
 - Local file uploads for `dataset_images upload` and `objects create` are not supported (URLs only)
 - Device-code login flow not implemented
-- Autocompletion not available
-- Rich progress UI not implemented
 
 ## License
 
-[Your License Here]
-
+MIT

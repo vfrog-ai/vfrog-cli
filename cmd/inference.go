@@ -11,8 +11,8 @@ import (
 )
 
 var (
-	inferenceAPIKey string
-	inferenceImageURL string
+	inferenceAPIKey    string
+	inferenceImageURL  string
 	inferenceImagePath string
 )
 
@@ -35,7 +35,6 @@ var inferenceCmd = &cobra.Command{
 		req := vfrogapi.InferenceRequest{}
 
 		if inferenceImagePath != "" {
-			// Local file - encode as base64
 			imageBase64, err := vfrogapi.EncodeImageFile(inferenceImagePath)
 			if err != nil {
 				return fmt.Errorf("failed to read image file: %w", err)
@@ -79,4 +78,3 @@ func init() {
 	inferenceCmd.Flags().StringVar(&inferenceImageURL, "image_url", "", "Image URL to process")
 	inferenceCmd.Flags().StringVar(&inferenceImagePath, "image", "", "Local image file path to process")
 }
-

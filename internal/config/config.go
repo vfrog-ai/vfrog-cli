@@ -9,6 +9,26 @@ import (
 	"time"
 )
 
+// Build-time variables (set via ldflags)
+var (
+	// DefaultSupabaseURL is set at build time for each environment binary
+	DefaultSupabaseURL = ""
+	// DefaultSupabasePublishableKey is set at build time for each environment binary
+	DefaultSupabasePublishableKey = ""
+	// DefaultAPIURL is set at build time for each environment binary
+	DefaultAPIURL = ""
+	// DefaultInferenceURL is set at build time for each environment binary
+	DefaultInferenceURL = ""
+	// DefaultAPIProjectBaseURL is set at build time for each environment binary
+	DefaultAPIProjectBaseURL = ""
+	// DefaultPlatformHost is set at build time for each environment binary
+	DefaultPlatformHost = ""
+	// Environment name (dev, staging, production) - informational
+	Environment = "production"
+	// Version is set at build time
+	Version = "dev"
+)
+
 var (
 	configDir  = filepath.Join(os.Getenv("HOME"), ".vfrog")
 	configPath = filepath.Join(configDir, "config.json")
@@ -37,7 +57,7 @@ type Auth struct {
 	ExpiresAt    time.Time `json:"expires_at,omitempty"`
 }
 
-// Load reads the configuration from disk
+// Load reads the configuration from disk and applies build-time defaults
 func Load() (*Config, error) {
 	mu.RLock()
 	defer mu.RUnlock()
@@ -46,6 +66,8 @@ func Load() (*Config, error) {
 	
 	// Check if config file exists
 	if _, err := os.Stat(configPath); os.IsNotExist(err) {
+		// Apply build-time defaults
+		applyDefaults(cfg)
 		return cfg, nil
 	}
 
@@ -55,6 +77,7 @@ func Load() (*Config, error) {
 	}
 
 	if len(data) == 0 {
+		applyDefaults(cfg)
 		return cfg, nil
 	}
 
@@ -62,7 +85,31 @@ func Load() (*Config, error) {
 		return nil, fmt.Errorf("failed to parse config: %w", err)
 	}
 
+	// Apply defaults for any missing values
+	applyDefaults(cfg)
 	return cfg, nil
+}
+
+// applyDefaults fills in build-time default values for empty fields
+func applyDefaults(cfg *Config) {
+	if cfg.SupabaseURL == "" {
+		cfg.SupabaseURL = DefaultSupabaseURL
+	}
+	if cfg.SupabasePublishableKey == "" {
+		cfg.SupabasePublishableKey = DefaultSupabasePublishableKey
+	}
+	if cfg.APIURL == "" {
+		cfg.APIURL = DefaultAPIURL
+	}
+	if cfg.InferenceURL == "" {
+		cfg.InferenceURL = DefaultInferenceURL
+	}
+	if cfg.APIProjectBaseURL == "" {
+		cfg.APIProjectBaseURL = DefaultAPIProjectBaseURL
+	}
+	if cfg.PlatformHost == "" {
+		cfg.PlatformHost = DefaultPlatformHost
+	}
 }
 
 // Save writes the configuration to disk

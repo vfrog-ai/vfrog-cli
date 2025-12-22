@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/vfrog/vfrog-cli/internal/config"
@@ -24,7 +25,7 @@ type Client struct {
 func NewClient(cfg *config.Config, apiKeyOverride string) (*Client, error) {
 	apiURL := cfg.APIURL
 	if apiURL == "" {
-		apiURL = "https://api-dev.vfrog.ai"
+		apiURL = "https://api.vfrog.ai"
 	}
 
 	apiKey := apiKeyOverride
@@ -47,18 +48,18 @@ func NewClient(cfg *config.Config, apiKeyOverride string) (*Client, error) {
 
 // InferenceRequest represents a CV inference request
 type InferenceRequest struct {
-	ImageURL   string `json:"image_url,omitempty"`
+	ImageURL    string `json:"image_url,omitempty"`
 	ImageBase64 string `json:"image_base64,omitempty"`
-	ExternalID string `json:"external_id,omitempty"`
+	ExternalID  string `json:"external_id,omitempty"`
 }
 
 // InferenceResponse represents a CV inference response
 type InferenceResponse struct {
-	Success   bool                   `json:"success"`
-	RequestID string                 `json:"request_id"`
-	ImageURL  string                 `json:"image_url"`
-	Status    string                 `json:"status"`
-	Error     string                 `json:"error,omitempty"`
+	Success   bool                     `json:"success"`
+	RequestID string                   `json:"request_id"`
+	ImageURL  string                   `json:"image_url"`
+	Status    string                   `json:"status"`
+	Error     string                   `json:"error,omitempty"`
 	Results   []map[string]interface{} `json:"results,omitempty"`
 }
 
@@ -109,18 +110,14 @@ func EncodeImageFile(filePath string) (string, error) {
 		return "", fmt.Errorf("failed to read file: %w", err)
 	}
 
-	// Determine MIME type from extension
 	mimeType := "image/jpeg"
-	if len(filePath) > 4 {
-		ext := filePath[len(filePath)-4:]
-		if ext == ".png" {
-			mimeType = "image/png"
-		} else if ext == ".webp" {
-			mimeType = "image/webp"
-		}
+	lower := strings.ToLower(filePath)
+	if strings.HasSuffix(lower, ".png") {
+		mimeType = "image/png"
+	} else if strings.HasSuffix(lower, ".webp") {
+		mimeType = "image/webp"
 	}
 
 	encoded := base64.StdEncoding.EncodeToString(data)
 	return fmt.Sprintf("data:%s;base64,%s", mimeType, encoded), nil
 }
-
