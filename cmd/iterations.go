@@ -194,11 +194,6 @@ var iterationsDeleteCmd = &cobra.Command{
 	Short: "Delete an iteration",
 	Long:  `Delete an iteration by ID.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		iterationID, _ := cmd.Flags().GetString("iteration_id")
-		if iterationID == "" {
-			return fmt.Errorf("iteration_id is required")
-		}
-
 		cfg, err := config.Load()
 		if err != nil {
 			return fmt.Errorf("failed to load config: %w", err)
@@ -211,6 +206,11 @@ var iterationsDeleteCmd = &cobra.Command{
 		client, err := supabase.NewClient(cfg)
 		if err != nil {
 			return fmt.Errorf("failed to create Supabase client: %w", err)
+		}
+
+		iterationID, err := getIterationID(cmd, cfg, client)
+		if err != nil {
+			return err
 		}
 
 		if err := client.Delete("project_iteration", iterationID); err != nil {
@@ -245,12 +245,8 @@ of using the images linked to the iteration.
 
 The iteration must be in 'created' status to start SSAT.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		iterationID, _ := cmd.Flags().GetString("iteration_id")
-		if iterationID == "" {
-			return fmt.Errorf("iteration_id is required")
-		}
-
 		randomCount, _ := cmd.Flags().GetInt("random")
+		restartFlag, _ := cmd.Flags().GetBool("restart")
 
 		cfg, err := config.Load()
 		if err != nil {
@@ -268,6 +264,48 @@ The iteration must be in 'created' status to start SSAT.`,
 		client, err := supabase.NewClient(cfg)
 		if err != nil {
 			return fmt.Errorf("failed to create Supabase client: %w", err)
+		}
+
+		// Resolve iteration ID
+		iterationID, err := getIterationID(cmd, cfg, client)
+		if err != nil {
+			return err
+		}
+
+		// If --restart flag is set, restart the iteration first
+		if restartFlag {
+			// Get access token for restart
+			accessToken, err := getAccessToken(cfg)
+			if err != nil {
+				return fmt.Errorf("authentication required: %w. Run 'vfrog login' first", err)
+			}
+
+			// Create API client
+			ssatClient, err := vfrogapi.NewSSATClient(cfg, accessToken)
+			if err != nil {
+				return fmt.Errorf("failed to create API client: %w", err)
+			}
+
+			// Restart the iteration
+			params := vfrogapi.RestartIterationParams{
+				IterationID: iterationID,
+			}
+
+			result, err := ssatClient.RestartIteration(params)
+			if err != nil {
+				return fmt.Errorf("failed to restart iteration: %w", err)
+			}
+
+			// Use the new iteration ID
+			newIterationID, ok := result["iteration_id"].(string)
+			if !ok {
+				return fmt.Errorf("invalid response from restart: missing iteration_id")
+			}
+			iterationID = newIterationID
+
+			if !jsonOutput {
+				fmt.Printf("Restarted iteration (new ID: %s)\n", iterationID)
+			}
 		}
 
 		// Get iteration details
@@ -407,11 +445,6 @@ var iterationsHaloCmd = &cobra.Command{
 	Short: "Get HALO URL for an iteration",
 	Long:  `Print the Platform URL for HALO (Human Assisted Labelling of Objects) workflow for an iteration.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		iterationID, _ := cmd.Flags().GetString("iteration_id")
-		if iterationID == "" {
-			return fmt.Errorf("iteration_id is required")
-		}
-
 		cfg, err := config.Load()
 		if err != nil {
 			return fmt.Errorf("failed to load config: %w", err)
@@ -420,6 +453,11 @@ var iterationsHaloCmd = &cobra.Command{
 		client, err := supabase.NewClient(cfg)
 		if err != nil {
 			return fmt.Errorf("failed to create Supabase client: %w", err)
+		}
+
+		iterationID, err := getIterationID(cmd, cfg, client)
+		if err != nil {
+			return err
 		}
 
 		iterations, err := client.Get("project_iteration", map[string]string{
@@ -459,11 +497,6 @@ var iterationTrainCmd = &cobra.Command{
 	Short: "Train a model for an iteration",
 	Long:  `Train a model for an iteration using the API project.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		iterationID, _ := cmd.Flags().GetString("iteration_id")
-		if iterationID == "" {
-			return fmt.Errorf("iteration_id is required")
-		}
-
 		cfg, err := config.Load()
 		if err != nil {
 			return fmt.Errorf("failed to load config: %w", err)
@@ -486,6 +519,11 @@ var iterationTrainCmd = &cobra.Command{
 		client, err := supabase.NewClient(cfg)
 		if err != nil {
 			return fmt.Errorf("failed to create Supabase client: %w", err)
+		}
+
+		iterationID, err := getIterationID(cmd, cfg, client)
+		if err != nil {
+			return err
 		}
 
 		iterations, err := client.Get("project_iteration", map[string]string{
@@ -627,6 +665,55 @@ var iterationTrainCmd = &cobra.Command{
 // getAccessToken gets the access token from auth (requires login)
 func getAccessToken(cfg *config.Config) (string, error) {
 	return auth.GetValidToken(cfg)
+}
+
+// getIterationID resolves iteration ID from either --iteration_id or --iteration_number flag
+// If iteration_number is provided, it uses object_id from flag or config
+func getIterationID(cmd *cobra.Command, cfg *config.Config, client *supabase.Client) (string, error) {
+	iterationID, _ := cmd.Flags().GetString("iteration_id")
+	iterationNumber, _ := cmd.Flags().GetInt("iteration_number")
+
+	if iterationID != "" && iterationNumber > 0 {
+		return "", fmt.Errorf("cannot specify both --iteration_id and --iteration_number")
+	}
+
+	if iterationID != "" {
+		return iterationID, nil
+	}
+
+	if iterationNumber > 0 {
+		// Need object_id to find iteration by number
+		objectID, _ := cmd.Flags().GetString("object_id")
+		if objectID == "" {
+			objectID = cfg.ObjectID
+		}
+		if objectID == "" {
+			return "", fmt.Errorf("object_id is required when using --iteration_number. Set it with: vfrog config set object --object_id <id>")
+		}
+
+		// Find iteration by number
+		iterations, err := client.Get("project_iteration", map[string]string{
+			"product_image_id":  fmt.Sprintf("eq.%s", objectID),
+			"iteration_number":   fmt.Sprintf("eq.%d", iterationNumber),
+			"select":            "id",
+		})
+		if err != nil {
+			return "", fmt.Errorf("failed to find iteration #%d: %w", iterationNumber, err)
+		}
+
+		if len(iterations) == 0 {
+			return "", fmt.Errorf("iteration #%d not found for object %s", iterationNumber, objectID)
+		}
+
+		iterID, ok := iterations[0]["id"].(string)
+		if !ok {
+			return "", fmt.Errorf("invalid iteration ID format")
+		}
+
+		return iterID, nil
+	}
+
+	return "", fmt.Errorf("either --iteration_id or --iteration_number is required")
 }
 
 // runAnnotatorSSAT runs SSAT using the API project (for iteration 1)
@@ -880,14 +967,19 @@ The new iteration will have:
 - iteration_number = current + 1
 - ssat_model_id = current iteration's model_id (for SSAT inference)`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		iterationID, _ := cmd.Flags().GetString("iteration_id")
-		if iterationID == "" {
-			return fmt.Errorf("iteration_id is required")
-		}
-
 		cfg, err := config.Load()
 		if err != nil {
 			return fmt.Errorf("failed to load config: %w", err)
+		}
+
+		client, err := supabase.NewClient(cfg)
+		if err != nil {
+			return fmt.Errorf("failed to create Supabase client: %w", err)
+		}
+
+		iterationID, err := getIterationID(cmd, cfg, client)
+		if err != nil {
+			return err
 		}
 
 		// Get API key
@@ -936,14 +1028,19 @@ This is only allowed if the iteration is the latest for this object
 For iteration #1: Recreates with status "created".
 For iteration #2+: Recreates with ssat_model_id from the previous iteration's model_id.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		iterationID, _ := cmd.Flags().GetString("iteration_id")
-		if iterationID == "" {
-			return fmt.Errorf("iteration_id is required")
-		}
-
 		cfg, err := config.Load()
 		if err != nil {
 			return fmt.Errorf("failed to load config: %w", err)
+		}
+
+		client, err := supabase.NewClient(cfg)
+		if err != nil {
+			return fmt.Errorf("failed to create Supabase client: %w", err)
+		}
+
+		iterationID, err := getIterationID(cmd, cfg, client)
+		if err != nil {
+			return err
 		}
 
 		// Get API key
@@ -973,9 +1070,21 @@ For iteration #2+: Recreates with ssat_model_id from the previous iteration's mo
 			return output.PrintJSON(result)
 		}
 
+		// Format as table similar to iterations list
+		table := output.NewTable("ITERATION", "ID", "STATUS", "SSAT_MODEL_ID", "PREVIOUS_ID")
+		iterationNumber := fmt.Sprintf("#%v", result["iteration_number"])
 		newIterationID := fmt.Sprintf("%v", result["iteration_id"])
-		iterationNumber := result["iteration_number"]
-		output.PrintSuccess(fmt.Sprintf("Restarted iteration #%v (new ID: %s)", iterationNumber, newIterationID))
+		status := "created"
+		ssatModelID := "-"
+		if modelID, ok := result["ssat_model_id"].(string); ok && modelID != "" {
+			ssatModelID = modelID
+		} else if modelID, ok := result["ssat_model_id"]; ok && modelID != nil {
+			ssatModelID = fmt.Sprintf("%v", modelID)
+		}
+		previousID := fmt.Sprintf("%v", result["previous_id"])
+		table.AddRow(iterationNumber, newIterationID, status, ssatModelID, previousID)
+		table.Print()
+
 		return nil
 	},
 }
@@ -995,10 +1104,23 @@ func init() {
 	iterationsListCmd.Flags().String("object_id", "", "Object (product image) ID")
 	iterationsCreateCmd.Flags().Int("random", 20, "Number of random dataset images to select")
 	iterationsDeleteCmd.Flags().String("iteration_id", "", "Iteration ID to delete")
+	iterationsDeleteCmd.Flags().Int("iteration_number", 0, "Iteration number (uses object_id from config if not provided)")
+	iterationsDeleteCmd.Flags().String("object_id", "", "Object (product image) ID (uses config value if not provided)")
 	iterationsSSATCmd.Flags().String("iteration_id", "", "Iteration ID")
+	iterationsSSATCmd.Flags().Int("iteration_number", 0, "Iteration number (uses object_id from config if not provided)")
+	iterationsSSATCmd.Flags().String("object_id", "", "Object (product image) ID (uses config value if not provided)")
 	iterationsSSATCmd.Flags().Int("random", 0, "Randomly select N dataset images from the project (overrides default behavior)")
+	iterationsSSATCmd.Flags().Bool("restart", false, "Restart the iteration before running SSAT")
 	iterationsHaloCmd.Flags().String("iteration_id", "", "Iteration ID")
+	iterationsHaloCmd.Flags().Int("iteration_number", 0, "Iteration number (uses object_id from config if not provided)")
+	iterationsHaloCmd.Flags().String("object_id", "", "Object (product image) ID (uses config value if not provided)")
 	iterationTrainCmd.Flags().String("iteration_id", "", "Iteration ID to train")
+	iterationTrainCmd.Flags().Int("iteration_number", 0, "Iteration number (uses object_id from config if not provided)")
+	iterationTrainCmd.Flags().String("object_id", "", "Object (product image) ID (uses config value if not provided)")
 	iterationsNextCmd.Flags().String("iteration_id", "", "Current iteration ID to create next from")
+	iterationsNextCmd.Flags().Int("iteration_number", 0, "Iteration number (uses object_id from config if not provided)")
+	iterationsNextCmd.Flags().String("object_id", "", "Object (product image) ID (uses config value if not provided)")
 	iterationsRestartCmd.Flags().String("iteration_id", "", "Iteration ID to restart")
+	iterationsRestartCmd.Flags().Int("iteration_number", 0, "Iteration number (uses object_id from config if not provided)")
+	iterationsRestartCmd.Flags().String("object_id", "", "Object (product image) ID (uses config value if not provided)")
 }
