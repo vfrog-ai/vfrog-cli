@@ -98,6 +98,7 @@ func Load() (*Config, error) {
 }
 
 // applyDefaults fills in build-time default values for empty fields
+// For local environment, always use build-time defaults for API URLs to ensure correct localhost endpoints
 func applyDefaults(cfg *Config) {
 	if cfg.SupabaseURL == "" {
 		cfg.SupabaseURL = DefaultSupabaseURL
@@ -105,11 +106,22 @@ func applyDefaults(cfg *Config) {
 	if cfg.SupabasePublishableKey == "" {
 		cfg.SupabasePublishableKey = DefaultSupabasePublishableKey
 	}
-	if cfg.APIURL == "" {
-		cfg.APIURL = DefaultAPIURL
-	}
-	if cfg.APIProjectBaseURL == "" {
-		cfg.APIProjectBaseURL = DefaultAPIProjectBaseURL
+	// For local environment, always use build-time defaults for API URLs
+	if Environment == "local" {
+		if DefaultAPIURL != "" {
+			cfg.APIURL = DefaultAPIURL
+		}
+		if DefaultAPIProjectBaseURL != "" {
+			cfg.APIProjectBaseURL = DefaultAPIProjectBaseURL
+		}
+	} else {
+		// For other environments, only set if empty
+		if cfg.APIURL == "" {
+			cfg.APIURL = DefaultAPIURL
+		}
+		if cfg.APIProjectBaseURL == "" {
+			cfg.APIProjectBaseURL = DefaultAPIProjectBaseURL
+		}
 	}
 	if cfg.PlatformHost == "" {
 		cfg.PlatformHost = DefaultPlatformHost
