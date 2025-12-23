@@ -47,17 +47,19 @@ vfrog version
 vfrog --help
 ```
 
-### Shell Autocompletion
+## Shell Autocompletion
 
-Enable autocompletion for your shell:
+The vfrog CLI supports autocompletion for bash, zsh, fish, and PowerShell. This enables tab completion for commands, subcommands, and flags.
 
-**Zsh (macOS default):**
+### Quick Setup
+
+**Zsh (macOS default, Oh My Zsh):**
 
 ```bash
-# Add to your ~/.zshrc
+# Option 1: Add to your ~/.zshrc (dynamic, slower startup)
 echo 'source <(vfrog completion zsh)' >> ~/.zshrc
 
-# Or generate a completion file (recommended for faster shell startup)
+# Option 2: Generate completion file (recommended for faster shell startup)
 vfrog completion zsh > "${fpath[1]}/_vfrog"
 
 # Reload shell
@@ -69,27 +71,52 @@ source ~/.zshrc
 ```bash
 # Linux: Add to ~/.bashrc
 echo 'source <(vfrog completion bash)' >> ~/.bashrc
+source ~/.bashrc
 
-# macOS: Install bash-completion first
+# macOS: Install bash-completion first, then add to ~/.bash_profile
 brew install bash-completion@2
 echo 'source <(vfrog completion bash)' >> ~/.bash_profile
-
-# Reload shell
-source ~/.bashrc  # or ~/.bash_profile on macOS
+source ~/.bash_profile
 ```
 
 **Fish:**
 
 ```bash
+# Create completions directory if it doesn't exist
+mkdir -p ~/.config/fish/completions
+
+# Generate completion file
 vfrog completion fish > ~/.config/fish/completions/vfrog.fish
+
+# Reload shell (or restart terminal)
 ```
 
 **PowerShell:**
 
 ```powershell
+# Add to PowerShell profile for persistence
+vfrog completion powershell | Out-String | Add-Content $PROFILE
+
+# Or run once per session
 vfrog completion powershell | Out-String | Invoke-Expression
-# Or add to your PowerShell profile for persistence
 ```
+
+### Testing Autocompletion
+
+After setup, test autocompletion by typing:
+
+```bash
+vfrog <TAB>          # Shows all available commands
+vfrog projects <TAB> # Shows subcommands (list, create)
+vfrog --<TAB>        # Shows all available flags
+```
+
+### Troubleshooting
+
+- **Zsh**: If completion doesn't work, ensure `compinit` is enabled: `autoload -Uz compinit && compinit`
+- **Bash**: On macOS, ensure bash-completion@2 is installed via Homebrew
+- **Fish**: Ensure the completions directory exists: `mkdir -p ~/.config/fish/completions`
+- **All shells**: Restart your terminal after setup
 
 ## Available Binaries
 
@@ -109,7 +136,7 @@ Credentials are baked into each binary at build time from GCP Secret Manager.
 vfrog login
 ```
 
-This will prompt for your email and password and store authentication tokens locally in `~/.vfrog/config.json`.
+This will prompt for your email and password and store authentication tokens locally in `~/.vfrog/config-<environment>.json` (e.g., `config-local.json` for `vfrog-local`, `config-dev.json` for `vfrog-dev`).
 
 ```bash
 vfrog login --email user@example.com --password mypassword
@@ -181,8 +208,11 @@ vfrog iterations create <object_id> --random 50
 # Delete an iteration
 vfrog iterations delete --iteration_id <id>
 
-# Get SSAT URL for an iteration
+# Start SSAT for an iteration (uses linked dataset images, default count based on iteration number)
 vfrog iterations ssat --iteration_id <id>
+
+# Start SSAT with random selection of dataset images from the project
+vfrog iterations ssat --iteration_id <id> --random 50
 
 # Get HALO URL for an iteration
 vfrog iterations halo --iteration_id <id>
@@ -216,6 +246,17 @@ All commands support `--json` flag for machine-readable output:
 ```bash
 vfrog projects list --json
 ```
+
+## Configuration Files
+
+Each environment binary uses a separate config file to avoid conflicts:
+
+- `vfrog-local` → `~/.vfrog/config-local.json`
+- `vfrog-dev` → `~/.vfrog/config-dev.json`
+- `vfrog-staging` → `~/.vfrog/config-staging.json`
+- `vfrog` (production) → `~/.vfrog/config-production.json`
+
+This means you can have different organisations, projects, and authentication tokens for each environment without interference.
 
 ## Context Requirements
 
@@ -251,6 +292,34 @@ vfrog dataset_images upload https://example.com/image.jpg
 git clone https://github.com/vfrog/vfrog-cli.git
 cd vfrog-cli
 go build -o vfrog ./main.go
+```
+
+### Building for Local Development
+
+To build a CLI that connects to your local development environment (docker-compose):
+
+```bash
+# Build vfrog-local (points to localhost:8005 for API project)
+make build-local LOCAL_SUPABASE_URL="https://your-supabase.supabase.co" LOCAL_SUPABASE_KEY="your-publishable-key"
+
+# Or set environment variables
+export LOCAL_SUPABASE_URL="https://your-supabase.supabase.co"
+export LOCAL_SUPABASE_KEY="your-publishable-key"
+make build-local
+```
+
+**Prerequisites:**
+
+1. Start local services: `cd ../annotator_local_dev && docker-compose up -d`
+2. Ensure API project is running on `http://localhost:8005`
+3. Ensure Supabase credentials are configured in your `.env` file
+
+**Usage:**
+
+```bash
+# Use vfrog-local instead of vfrog-dev
+./vfrog-local login
+./vfrog-local projects list
 ```
 
 ### Building with Custom Credentials

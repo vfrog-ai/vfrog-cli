@@ -65,7 +65,6 @@ var configShowCmd = &cobra.Command{
 			"object_id":       cfg.ObjectID,
 			"supabase_url":    cfg.SupabaseURL,
 			"api_url":         cfg.APIURL,
-			"inference_url":   cfg.InferenceURL,
 			"platform_host":   cfg.PlatformHost,
 			"authenticated":   cfg.Auth != nil && cfg.Auth.AccessToken != "",
 		}
@@ -81,7 +80,6 @@ var configShowCmd = &cobra.Command{
 		fmt.Printf("Object ID:       %s\n", cfg.ObjectID)
 		fmt.Printf("Supabase URL:    %s\n", cfg.SupabaseURL)
 		fmt.Printf("API URL:         %s\n", cfg.APIURL)
-		fmt.Printf("Inference URL:   %s\n", cfg.InferenceURL)
 		fmt.Printf("Platform Host:   %s\n", cfg.PlatformHost)
 		if cfg.Auth != nil && cfg.Auth.AccessToken != "" {
 			fmt.Printf("Authenticated:   yes (expires: %s)\n", cfg.Auth.ExpiresAt.Format(time.RFC3339))

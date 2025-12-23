@@ -17,10 +17,6 @@ var (
 	DefaultSupabasePublishableKey = ""
 	// DefaultAPIURL is set at build time for each environment binary
 	DefaultAPIURL = ""
-	// DefaultInferenceURL is set at build time for each environment binary
-	DefaultInferenceURL = ""
-	// DefaultAnnotatorURL is set at build time for each environment binary
-	DefaultAnnotatorURL = ""
 	// DefaultAPIProjectBaseURL is set at build time for each environment binary
 	DefaultAPIProjectBaseURL = ""
 	// DefaultPlatformHost is set at build time for each environment binary
@@ -33,9 +29,18 @@ var (
 
 var (
 	configDir  = filepath.Join(os.Getenv("HOME"), ".vfrog")
-	configPath = filepath.Join(configDir, "config.json")
 	mu         sync.RWMutex
 )
+
+// getConfigPath returns the config file path based on the environment
+func getConfigPath() string {
+	env := Environment
+	if env == "" {
+		env = "default"
+	}
+	configFile := fmt.Sprintf("config-%s.json", env)
+	return filepath.Join(configDir, configFile)
+}
 
 // Config represents the CLI configuration
 type Config struct {
@@ -44,12 +49,8 @@ type Config struct {
 	OrganisationID         string `json:"organisation_id,omitempty"`
 	ProjectID              string `json:"project_id,omitempty"`
 	ObjectID               string `json:"object_id,omitempty"`
-	APIURL                 string `json:"api_url,omitempty"`
-	InferenceURL           string `json:"inference_url,omitempty"`
-	InferenceAPIKey        string `json:"inference_api_key,omitempty"`
-	AnnotatorURL           string `json:"annotator_url,omitempty"`
-	AnnotatorAPIKey        string `json:"annotator_api_key,omitempty"`
-	APIProjectBaseURL      string `json:"api_project_base_url,omitempty"`
+	APIURL            string `json:"api_url,omitempty"`
+	APIProjectBaseURL string `json:"api_project_base_url,omitempty"`
 	PlatformHost           string `json:"platform_host,omitempty"`
 	APIKey                 string `json:"api_key,omitempty"`
 	Auth                   *Auth  `json:"auth,omitempty"`
@@ -68,6 +69,7 @@ func Load() (*Config, error) {
 	defer mu.RUnlock()
 
 	cfg := &Config{}
+	configPath := getConfigPath()
 	
 	// Check if config file exists
 	if _, err := os.Stat(configPath); os.IsNotExist(err) {
@@ -106,12 +108,6 @@ func applyDefaults(cfg *Config) {
 	if cfg.APIURL == "" {
 		cfg.APIURL = DefaultAPIURL
 	}
-	if cfg.InferenceURL == "" {
-		cfg.InferenceURL = DefaultInferenceURL
-	}
-	if cfg.AnnotatorURL == "" {
-		cfg.AnnotatorURL = DefaultAnnotatorURL
-	}
 	if cfg.APIProjectBaseURL == "" {
 		cfg.APIProjectBaseURL = DefaultAPIProjectBaseURL
 	}
@@ -130,6 +126,7 @@ func Save(cfg *Config) error {
 		return fmt.Errorf("failed to create config directory: %w", err)
 	}
 
+	configPath := getConfigPath()
 	data, err := json.MarshalIndent(cfg, "", "  ")
 	if err != nil {
 		return fmt.Errorf("failed to marshal config: %w", err)

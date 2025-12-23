@@ -235,10 +235,13 @@ var iterationsSSATCmd = &cobra.Command{
 For iteration 1: Uses the annotator service with cutout extraction and matching.
 For iteration 2+: Uses inference with a trained model from the previous iteration.
 
-The number of dataset images processed depends on the iteration number:
+By default, the number of dataset images processed depends on the iteration number:
 - Iteration 1: 20 images
 - Iteration 2: 40 images
 - Iteration 3+: 80 images
+
+Use --random X to randomly select X dataset images from the project's dataset_images instead
+of using the images linked to the iteration.
 
 The iteration must be in 'created' status to start SSAT.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
@@ -247,12 +250,18 @@ The iteration must be in 'created' status to start SSAT.`,
 			return fmt.Errorf("iteration_id is required")
 		}
 
+		randomCount, _ := cmd.Flags().GetInt("random")
+
 		cfg, err := config.Load()
 		if err != nil {
 			return fmt.Errorf("failed to load config: %w", err)
 		}
 
 		if err := cfg.RequireOrganisationID(); err != nil {
+			return err
+		}
+
+		if err := cfg.RequireProjectID(); err != nil {
 			return err
 		}
 
@@ -283,42 +292,84 @@ The iteration must be in 'created' status to start SSAT.`,
 		}
 
 		productImageID := iter["product_image_id"].(string)
+		projectID := iter["project_id"].(string)
 		iterationNumber := int(iter["iteration_number"].(float64))
 
-		// Determine number of images based on iteration number
-		var imageCount int
-		switch iterationNumber {
-		case 1:
-			imageCount = 20
-		case 2:
-			imageCount = 40
-		default:
-			imageCount = 80
-		}
+		var datasetImageLinks []map[string]interface{}
 
-		// Get linked dataset images for this iteration
-		datasetImageLinks, err := client.Get("project_iteration_dataset_images", map[string]string{
-			"project_iteration_id": fmt.Sprintf("eq.%s", iterationID),
-			"select":               "id,dataset_image_id,dataset_images(id,file_url)",
-		})
-		if err != nil {
-			return fmt.Errorf("failed to get dataset images: %w", err)
-		}
-
-		if len(datasetImageLinks) == 0 {
-			return fmt.Errorf("no dataset images linked to this iteration. Create the iteration with dataset images first")
-		}
-
-		// Limit to imageCount
-		if len(datasetImageLinks) > imageCount {
-			// Randomly select imageCount images
-			rand.Seed(time.Now().UnixNano())
-			selectedIndices := rand.Perm(len(datasetImageLinks))[:imageCount]
-			selected := make([]map[string]interface{}, imageCount)
-			for i, idx := range selectedIndices {
-				selected[i] = datasetImageLinks[idx]
+		if randomCount > 0 {
+			// Randomly select from all project dataset images
+			allDatasetImages, err := client.Get("dataset_images", map[string]string{
+				"project_id": fmt.Sprintf("eq.%s", projectID),
+				"select":     "id,file_url",
+			})
+			if err != nil {
+				return fmt.Errorf("failed to get dataset images: %w", err)
 			}
-			datasetImageLinks = selected
+
+			if len(allDatasetImages) == 0 {
+				return fmt.Errorf("no dataset images found in project")
+			}
+
+			// Randomly select randomCount images
+			rand.Seed(time.Now().UnixNano())
+			selectedCount := randomCount
+			if selectedCount > len(allDatasetImages) {
+				selectedCount = len(allDatasetImages)
+			}
+
+			selectedIndices := rand.Perm(len(allDatasetImages))[:selectedCount]
+			datasetImageLinks = make([]map[string]interface{}, selectedCount)
+			for i, idx := range selectedIndices {
+				img := allDatasetImages[idx]
+				// Format to match the structure expected by runAnnotatorSSAT/runInferenceSSAT
+				datasetImageLinks[i] = map[string]interface{}{
+					"dataset_image_id": img["id"],
+					"dataset_images": map[string]interface{}{
+						"id":       img["id"],
+						"file_url": img["file_url"],
+					},
+				}
+			}
+		} else {
+			// Use default behavior: get linked dataset images
+			// Determine number of images based on iteration number
+			var imageCount int
+			switch iterationNumber {
+			case 1:
+				imageCount = 20
+			case 2:
+				imageCount = 40
+			default:
+				imageCount = 80
+			}
+
+			// Get linked dataset images for this iteration
+			linkedImages, err := client.Get("project_iteration_dataset_images", map[string]string{
+				"project_iteration_id": fmt.Sprintf("eq.%s", iterationID),
+				"select":               "id,dataset_image_id,dataset_images(id,file_url)",
+			})
+			if err != nil {
+				return fmt.Errorf("failed to get dataset images: %w", err)
+			}
+
+			if len(linkedImages) == 0 {
+				return fmt.Errorf("no dataset images linked to this iteration. Create the iteration with dataset images first, or use --random X to select from project dataset images")
+			}
+
+			// Limit to imageCount
+			if len(linkedImages) > imageCount {
+				// Randomly select imageCount images
+				rand.Seed(time.Now().UnixNano())
+				selectedIndices := rand.Perm(len(linkedImages))[:imageCount]
+				selected := make([]map[string]interface{}, imageCount)
+				for i, idx := range selectedIndices {
+					selected[i] = linkedImages[idx]
+				}
+				datasetImageLinks = selected
+			} else {
+				datasetImageLinks = linkedImages
+			}
 		}
 
 		// Check if we have a model (iteration 2+)
@@ -945,6 +996,7 @@ func init() {
 	iterationsCreateCmd.Flags().Int("random", 20, "Number of random dataset images to select")
 	iterationsDeleteCmd.Flags().String("iteration_id", "", "Iteration ID to delete")
 	iterationsSSATCmd.Flags().String("iteration_id", "", "Iteration ID")
+	iterationsSSATCmd.Flags().Int("random", 0, "Randomly select N dataset images from the project (overrides default behavior)")
 	iterationsHaloCmd.Flags().String("iteration_id", "", "Iteration ID")
 	iterationTrainCmd.Flags().String("iteration_id", "", "Iteration ID to train")
 	iterationsNextCmd.Flags().String("iteration_id", "", "Current iteration ID to create next from")
