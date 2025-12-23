@@ -126,10 +126,19 @@ var datasetImagesListCmd = &cobra.Command{
 			return output.PrintJSON(images)
 		}
 
-		fmt.Println("Dataset Images:")
-		for _, img := range images {
-			fmt.Printf("  - %s (ID: %v)\n", img["filename"], img["id"])
+		if len(images) == 0 {
+			fmt.Println("No dataset images found.")
+			return nil
 		}
+
+		table := output.NewTable("FILENAME", "ID", "URL")
+		for _, img := range images {
+			filename := fmt.Sprintf("%v", img["filename"])
+			id := fmt.Sprintf("%v", img["id"])
+			fileURL := fmt.Sprintf("%v", img["file_url"])
+			table.AddRow(filename, id, fileURL)
+		}
+		table.Print()
 
 		return nil
 	},
