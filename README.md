@@ -2,11 +2,33 @@
 
 Command-line interface for the vfrog platform. Provides fast, reliable, scriptable access to vfrog resources without using the web UI.
 
+## Table of Contents
+
+- [Installation](#installation)
+- [Quick Start](#quick-start)
+- [Step-by-Step Guide](#step-by-step-guide)
+  - [Step 1: Authenticate](#step-1-authenticate)
+  - [Step 2: Set Up Your Organisation](#step-2-set-up-your-organisation)
+  - [Step 3: Create a Project](#step-3-create-a-project)
+  - [Step 4: Upload Dataset Images](#step-4-upload-dataset-images)
+  - [Step 5: Create Objects (Product Images)](#step-5-create-objects-product-images)
+  - [Step 6: Run Iterations (SSAT Workflow)](#step-6-run-iterations-ssat-workflow)
+  - [Step 7: Review Annotations](#step-7-review-annotations)
+  - [Step 8: Train a Model](#step-8-train-a-model)
+  - [Step 9: Run CV Inference](#step-9-run-cv-inference)
+  - [Step 10: Export Your Data](#step-10-export-your-data)
+- [Command Reference](#command-reference)
+- [Configuration](#configuration)
+- [CI/CD Usage](#cicd-usage)
+- [Development](#development)
+
+---
+
 ## Installation
 
 ### Download Binary (Recommended)
 
-Download the appropriate binary for your environment:
+Download the appropriate binary for your platform and environment:
 
 **Production (recommended for most users):**
 
@@ -22,14 +44,10 @@ chmod +x vfrog && sudo mv vfrog /usr/local/bin/
 # Linux (AMD64)
 curl -L https://github.com/vfrog/vfrog-cli/releases/latest/download/vfrog-linux-amd64 -o vfrog
 chmod +x vfrog && sudo mv vfrog /usr/local/bin/
-```
 
-**Development environment:**
-
-```bash
-# macOS (Apple Silicon)
-curl -L https://github.com/vfrog/vfrog-cli/releases/latest/download/vfrog-dev-darwin-arm64 -o vfrog-dev
-chmod +x vfrog-dev && sudo mv vfrog-dev /usr/local/bin/
+# Windows (AMD64) - Run in PowerShell
+Invoke-WebRequest -Uri https://github.com/vfrog/vfrog-cli/releases/latest/download/vfrog-windows-amd64.exe -OutFile vfrog.exe
+Move-Item vfrog.exe $env:USERPROFILE\AppData\Local\Microsoft\WindowsApps\
 ```
 
 **Staging environment:**
@@ -38,6 +56,22 @@ chmod +x vfrog-dev && sudo mv vfrog-dev /usr/local/bin/
 # macOS (Apple Silicon)
 curl -L https://github.com/vfrog/vfrog-cli/releases/latest/download/vfrog-staging-darwin-arm64 -o vfrog-staging
 chmod +x vfrog-staging && sudo mv vfrog-staging /usr/local/bin/
+
+# Windows (AMD64)
+Invoke-WebRequest -Uri https://github.com/vfrog/vfrog-cli/releases/latest/download/vfrog-staging-windows-amd64.exe -OutFile vfrog-staging.exe
+Move-Item vfrog-staging.exe $env:USERPROFILE\AppData\Local\Microsoft\WindowsApps\
+```
+
+**Development environment:**
+
+```bash
+# macOS (Apple Silicon)
+curl -L https://github.com/vfrog/vfrog-cli/releases/latest/download/vfrog-dev-darwin-arm64 -o vfrog-dev
+chmod +x vfrog-dev && sudo mv vfrog-dev /usr/local/bin/
+
+# Windows (AMD64)
+Invoke-WebRequest -Uri https://github.com/vfrog/vfrog-cli/releases/latest/download/vfrog-dev-windows-amd64.exe -OutFile vfrog-dev.exe
+Move-Item vfrog-dev.exe $env:USERPROFILE\AppData\Local\Microsoft\WindowsApps\
 ```
 
 ### Verify Installation
@@ -47,242 +81,557 @@ vfrog version
 vfrog --help
 ```
 
-## Shell Autocompletion
-
-The vfrog CLI supports autocompletion for bash, zsh, fish, and PowerShell. This enables tab completion for commands, subcommands, and flags.
-
-### Quick Setup
-
-**Zsh (macOS default, Oh My Zsh):**
-
-```bash
-# Option 1: Add to your ~/.zshrc (dynamic, slower startup)
-echo 'source <(vfrog completion zsh)' >> ~/.zshrc
-
-# Option 2: Generate completion file (recommended for faster shell startup)
-vfrog completion zsh > "${fpath[1]}/_vfrog"
-
-# Reload shell
-source ~/.zshrc
-```
-
-**Bash:**
-
-```bash
-# Linux: Add to ~/.bashrc
-echo 'source <(vfrog completion bash)' >> ~/.bashrc
-source ~/.bashrc
-
-# macOS: Install bash-completion first, then add to ~/.bash_profile
-brew install bash-completion@2
-echo 'source <(vfrog completion bash)' >> ~/.bash_profile
-source ~/.bash_profile
-```
-
-**Fish:**
-
-```bash
-# Create completions directory if it doesn't exist
-mkdir -p ~/.config/fish/completions
-
-# Generate completion file
-vfrog completion fish > ~/.config/fish/completions/vfrog.fish
-
-# Reload shell (or restart terminal)
-```
-
-**PowerShell:**
-
+On Windows (PowerShell):
 ```powershell
-# Add to PowerShell profile for persistence
-vfrog completion powershell | Out-String | Add-Content $PROFILE
-
-# Or run once per session
-vfrog completion powershell | Out-String | Invoke-Expression
+.\vfrog.exe version
+.\vfrog.exe --help
 ```
 
-### Testing Autocompletion
+### Available Binaries
 
-After setup, test autocompletion by typing:
+Each release includes binaries configured for different environments:
 
-```bash
-vfrog <TAB>          # Shows all available commands
-vfrog projects <TAB> # Shows subcommands (list, create)
-vfrog --<TAB>        # Shows all available flags
-```
+| Binary          | Environment | API URL                        |
+| --------------- | ----------- | ------------------------------ |
+| `vfrog`         | production  | `https://api.vfrog.ai`         |
+| `vfrog-staging` | staging     | `https://api-staging.vfrog.ai` |
+| `vfrog-dev`     | development | `https://api-dev.vfrog.ai`     |
 
-### Troubleshooting
+Credentials are baked into each binary at build time.
 
-- **Zsh**: If completion doesn't work, ensure `compinit` is enabled: `autoload -Uz compinit && compinit`
-- **Bash**: On macOS, ensure bash-completion@2 is installed via Homebrew
-- **Fish**: Ensure the completions directory exists: `mkdir -p ~/.config/fish/completions`
-- **All shells**: Restart your terminal after setup
+---
 
-## Available Binaries
-
-Each release includes three binaries configured for different environments:
-
-| Binary          | Environment | Supabase            | API URL                        |
-| --------------- | ----------- | ------------------- | ------------------------------ |
-| `vfrog`         | production  | Production Supabase | `https://api.vfrog.ai`         |
-| `vfrog-staging` | staging     | Staging Supabase    | `https://api-staging.vfrog.ai` |
-| `vfrog-dev`     | development | Dev Supabase        | `https://api-dev.vfrog.ai`     |
-
-Credentials are baked into each binary at build time from GCP Secret Manager.
-
-## Authentication
+## Quick Start
 
 ```bash
+# 1. Log in
 vfrog login
+
+# 2. Set organisation and project
+vfrog config set organisation --organisation_id <org_id>
+vfrog config set project --project_id <project_id>
+
+# 3. Upload images and run the full SSAT workflow
+vfrog dataset_images upload https://example.com/img1.jpg https://example.com/img2.jpg
+vfrog objects create https://example.com/product.jpg --label "My Product"
+vfrog config set object --object_id <object_id>
+vfrog iterations create <object_id>
+vfrog iterations ssat --iteration_number 1
+vfrog iterations status --iteration_number 1 --watch
+
+# 4. Export results
+vfrog export yolo --iteration_id <id> --output ./my-dataset
 ```
 
-This will prompt for your email and password and store authentication tokens locally in `~/.vfrog/config-<environment>.json` (e.g., `config-local.json` for `vfrog-local`, `config-dev.json` for `vfrog-dev`).
+---
+
+## Step-by-Step Guide
+
+### Step 1: Authenticate
+
+Log in with your vfrog platform credentials:
 
 ```bash
+# Interactive login (prompts for email and password)
+vfrog login
+
+# Non-interactive login (for scripts and CI/CD)
 vfrog login --email user@example.com --password mypassword
 ```
 
-## Usage Examples
+Your authentication tokens are stored locally in `~/.vfrog/config-<environment>.json` and automatically refresh when expired.
 
-### Organisations
+### Step 2: Set Up Your Organisation
+
+List available organisations and select one as your default:
 
 ```bash
-# List organisations
+# List organisations you belong to
 vfrog organisations list
 
-# Set default organisation
+# Set default organisation (required before using most commands)
 vfrog config set organisation --organisation_id <org_id>
 ```
 
-### Projects
+> All subsequent commands use this organisation. Changing the organisation automatically clears the active project.
+
+### Step 3: Create a Project
+
+Projects are containers for your dataset images, objects, and iterations:
 
 ```bash
-# List projects
+# List existing projects
 vfrog projects list
 
-# Create a project
-vfrog projects create "My Project"
+# Create a new project
+vfrog projects create "My Detection Project"
 
 # Set default project
 vfrog config set project --project_id <project_id>
+
+# Delete a project (prompts for confirmation)
+vfrog projects delete --project_id <project_id>
+
+# Delete without confirmation
+vfrog projects delete --project_id <project_id> --force
 ```
 
-### Dataset Images
+### Step 4: Upload Dataset Images
+
+Dataset images are the images your model will learn to search through. There are several ways to add them:
+
+#### From URLs
 
 ```bash
-# Upload dataset images from URLs
+# Upload one or more image URLs
 vfrog dataset_images upload https://example.com/image1.jpg https://example.com/image2.jpg
+```
 
-# List dataset images
+> URLs must be persistent and publicly accessible. Images are referenced by URL, not stored on vfrog servers.
+
+#### From Local Files
+
+```bash
+# Upload a single local file
+vfrog dataset_images upload --file ./photo.jpg
+
+# Upload all images in a directory
+vfrog dataset_images upload --dir ./my-images/
+```
+
+Local files are uploaded to S3 via signed URL and the resulting URL is stored.
+
+#### From CSV
+
+For bulk imports, use a CSV file:
+
+```bash
+vfrog dataset_images import --csv ./images.csv
+```
+
+CSV format (header row required, only `image_url` is mandatory):
+```csv
+image_url,external_id,label
+https://example.com/img1.jpg,EXT001,scene_1
+https://example.com/img2.jpg,EXT002,scene_2
+```
+
+#### List and Delete
+
+```bash
+# List all dataset images in the active project
 vfrog dataset_images list
 
-# Delete a dataset image
+# Delete by ID
 vfrog dataset_images delete --dataset_image_id <id>
 ```
 
-### Objects (Product Images)
+### Step 5: Create Objects (Product Images)
+
+Objects are the product/reference images your model learns to detect:
 
 ```bash
-# Create an object from URL
-vfrog objects create https://example.com/product.jpg --label "Product Name" --external_id "EXT123"
+# Create from URL
+vfrog objects create https://example.com/product.jpg --label "Sneaker" --external_id "SKU123"
 
-# List objects
+# Create from local file
+vfrog objects create --file ./product.jpg --label "Sneaker"
+
+# List objects in the active project
 vfrog objects list
 
-# Delete an object
+# Set default object (needed for iteration commands)
+vfrog config set object --object_id <object_id>
+
+# Delete
 vfrog objects delete --object_id <id>
 ```
 
-### Iterations
+### Step 6: Run Iterations (SSAT Workflow)
+
+Iterations are the core SSAT (Semi-Supervised Active Training) workflow. Each iteration annotates your dataset images, you review them, then train a model.
+
+#### Create an Iteration
 
 ```bash
-# List iterations for an object
-vfrog iterations list --object_id <object_id>
-
-# Create a new iteration (randomly selects 20 dataset images by default)
+# Create iteration for an object (randomly selects 20 dataset images by default)
 vfrog iterations create <object_id>
 
-# Create with custom number of random images
+# Create with a specific number of random images
 vfrog iterations create <object_id> --random 50
+```
+
+#### List Iterations
+
+```bash
+# List iterations for the active object
+vfrog iterations list
+
+# List for a specific object
+vfrog iterations list --object_id <id>
+```
+
+#### Start SSAT Annotation
+
+```bash
+# Start SSAT by iteration ID
+vfrog iterations ssat --iteration_id <id>
+
+# Start SSAT by iteration number (uses active object)
+vfrog iterations ssat --iteration_number 1
+
+# Start SSAT with random image selection (overrides linked images)
+vfrog iterations ssat --iteration_id <id> --random 100
+
+# Restart an iteration and immediately run SSAT
+vfrog iterations ssat --iteration_id <id> --restart
+```
+
+**How it works:**
+- **Iteration 1:** Uses the annotator pipeline (cutout extraction + LLM matching)
+- **Iteration 2+:** Uses inference with the trained model from the previous iteration
+
+All linked dataset images are processed by default. Use `--random N` to sample from the full project dataset instead.
+
+#### Monitor Progress
+
+```bash
+# Check status once
+vfrog iterations status --iteration_id <id>
+
+# Watch status until completion (polls every 5 seconds)
+vfrog iterations status --iteration_id <id> --watch
+
+# Watch with custom interval
+vfrog iterations status --iteration_id <id> --watch --interval 10
+```
+
+#### SSAT Control
+
+Submit SSAT control feedback for quality assessment:
+
+```bash
+vfrog iterations control --iteration_id <id>
+```
+
+#### Review in HALO
+
+Open the HALO (Human Assisted Labelling of Objects) web UI to review and correct annotations:
+
+```bash
+# Print the HALO URL
+vfrog iterations halo --iteration_id <id>
+```
+
+#### Manage Iterations
+
+```bash
+# Create the next iteration from the current one
+vfrog iterations next --iteration_id <id>
+
+# Restart an iteration (delete and recreate)
+vfrog iterations restart --iteration_id <id>
 
 # Delete an iteration
 vfrog iterations delete --iteration_id <id>
-
-# Start SSAT for an iteration (uses linked dataset images, default count based on iteration number)
-vfrog iterations ssat --iteration_id <id>
-
-# Start SSAT with random selection of dataset images from the project
-vfrog iterations ssat --iteration_id <id> --random 50
-
-# Get HALO URL for an iteration
-vfrog iterations halo --iteration_id <id>
-
-# Train a model for an iteration
-vfrog iteration train --iteration_id <id>
 ```
 
-### Inference
+> You can use `--iteration_number` and `--object_id` instead of `--iteration_id` for any iteration command.
+
+### Step 7: Review Annotations
+
+View the annotations produced by SSAT:
 
 ```bash
-# Run inference on an image URL
+# List annotations with bounding box counts (table view)
+vfrog iterations annotations --iteration_id <id>
+
+# Full annotation details (JSON view)
+vfrog iterations annotations --iteration_id <id> --json
+```
+
+Table output shows:
+| Column | Description |
+|--------|-------------|
+| DATASET_IMAGE_ID | The dataset image that was annotated |
+| ANNOTATIONS | Number of bounding boxes detected |
+| CREATED_AT | When the annotation was created |
+
+Use `--json` for the full annotation data including bounding box coordinates.
+
+### Step 8: Train a Model
+
+After reviewing annotations in HALO, train a YOLO model:
+
+```bash
+# Train by iteration ID
+vfrog iterations train --iteration_id <id>
+
+# Train by iteration number
+vfrog iterations train --iteration_number 1
+
+# Monitor training progress
+vfrog iterations status --iteration_id <id> --watch
+```
+
+Once training completes, you can:
+- Create the next iteration: `vfrog iterations next --iteration_id <id>`
+- Run inference with the trained model
+- Export the annotated dataset
+
+### Step 9: Run CV Inference
+
+Run computer vision inference using your API key:
+
+#### Single Image
+
+```bash
+# Inference on a URL
 vfrog inference --api-key <key> --image_url https://example.com/image.jpg
 
-# Run inference on a local image file
+# Inference on a local file
 vfrog inference --api-key <key> --image ./local.jpg
 ```
 
-## API Key Precedence
+#### Batch Inference
+
+Process up to 10 images at once:
+
+```bash
+vfrog inference batch --api-key <key> --image_url "url1,url2,url3"
+
+# With an external ID for tracking
+vfrog inference batch --api-key <key> --image_url "url1,url2" --external_id "batch-001"
+```
+
+#### Check Request Status
+
+```bash
+vfrog inference status <request_id> --api-key <key>
+```
+
+#### Submit Feedback
+
+Rate inference results to help improve the model:
+
+```bash
+# Positive feedback
+vfrog inference feedback --request_id <id> --rating 1 --api-key <key>
+
+# Negative feedback
+vfrog inference feedback --request_id <id> --rating -1 --api-key <key>
+
+# Neutral
+vfrog inference feedback --request_id <id> --rating 0 --api-key <key>
+```
+
+### Step 10: Export Your Data
+
+Export annotated datasets for external use:
+
+#### YOLO Format
+
+Exports images, label files, and a `data.yaml` configuration:
+
+```bash
+# Export to a directory
+vfrog export yolo --iteration_id <id> --output ./my-dataset
+
+# Export and create a ZIP archive
+vfrog export yolo --iteration_id <id> --output ./my-dataset --zip
+```
+
+Output structure:
+```
+my-dataset/
+  images/        # Downloaded dataset images
+  labels/        # YOLO format annotations (class_id center_x center_y width height)
+  data.yaml      # Class names, train/val split (90/10)
+```
+
+#### JSON Format
+
+Export all annotation data as a structured JSON file:
+
+```bash
+vfrog export json --iteration_id <id> --output ./annotations.json
+```
+
+The JSON file contains full annotation arrays with bounding box coordinates, dataset image metadata, and export timestamps.
+
+---
+
+## Command Reference
+
+### Global Flags
+
+| Flag | Description |
+|------|-------------|
+| `--json` | Output in JSON format (all commands) |
+| `--config` | Custom config file path |
+| `-h, --help` | Help for any command |
+
+### All Commands
+
+| Command | Description |
+|---------|-------------|
+| `vfrog login` | Authenticate with the platform |
+| `vfrog version` | Print CLI version and environment |
+| `vfrog config set organisation` | Set default organisation |
+| `vfrog config set project` | Set default project |
+| `vfrog config set object` | Set default object |
+| **Organisations** | |
+| `vfrog organisations list` | List organisations |
+| **Projects** | |
+| `vfrog projects list` | List projects |
+| `vfrog projects create <name>` | Create a project |
+| `vfrog projects delete` | Delete a project |
+| **Dataset Images** | |
+| `vfrog dataset_images upload` | Upload from URLs or local files |
+| `vfrog dataset_images import` | Import from CSV file |
+| `vfrog dataset_images list` | List dataset images |
+| `vfrog dataset_images delete` | Delete a dataset image |
+| **Objects** | |
+| `vfrog objects create` | Create from URL or local file |
+| `vfrog objects list` | List objects |
+| `vfrog objects delete` | Delete an object |
+| **Iterations** | |
+| `vfrog iterations list` | List iterations |
+| `vfrog iterations create` | Create a new iteration |
+| `vfrog iterations delete` | Delete an iteration |
+| `vfrog iterations ssat` | Start SSAT annotation |
+| `vfrog iterations status` | Check iteration status |
+| `vfrog iterations annotations` | View iteration annotations |
+| `vfrog iterations control` | Submit SSAT control feedback |
+| `vfrog iterations train` | Train a model |
+| `vfrog iterations halo` | Get HALO review URL |
+| `vfrog iterations next` | Create next iteration |
+| `vfrog iterations restart` | Restart an iteration |
+| **Inference** | |
+| `vfrog inference` | Run single image inference |
+| `vfrog inference batch` | Run batch inference (up to 10) |
+| `vfrog inference status` | Check inference request status |
+| `vfrog inference feedback` | Submit inference feedback |
+| **Export** | |
+| `vfrog export yolo` | Export in YOLO format |
+| `vfrog export json` | Export in JSON format |
+
+Use `vfrog <command> --help` for detailed flag information on any command.
+
+---
+
+## Configuration
+
+### API Key Precedence
 
 For inference commands, API keys are resolved in this order:
 
 1. `--api-key` flag
 2. `VFROG_API_KEY` environment variable
-3. `api_key` in `~/.vfrog/config.json`
+3. `api_key` in config file
 
-## JSON Output
+### Configuration Files
 
-All commands support `--json` flag for machine-readable output:
+Each environment binary uses a separate config file:
+
+| Binary | Config File |
+|--------|-------------|
+| `vfrog` (production) | `~/.vfrog/config-production.json` |
+| `vfrog-staging` | `~/.vfrog/config-staging.json` |
+| `vfrog-dev` | `~/.vfrog/config-dev.json` |
+| `vfrog-local` | `~/.vfrog/config-local.json` |
+
+On Windows: `%USERPROFILE%\.vfrog\` (e.g., `C:\Users\YourName\.vfrog\`).
+
+You can have different organisations, projects, and authentication tokens per environment without conflicts.
+
+### Context Requirements
+
+| Commands | Requires |
+|----------|----------|
+| `projects` | `organisation_id` |
+| `dataset_images`, `objects`, `iterations`, `export` | `organisation_id` + `project_id` |
+| `iterations list`, iteration number lookups | `object_id` |
+
+When `organisation_id` changes, `project_id` is automatically cleared. When `project_id` changes, `object_id` is automatically cleared.
+
+---
+
+## Shell Autocompletion
+
+The CLI supports autocompletion for bash, zsh, fish, and PowerShell:
 
 ```bash
-vfrog projects list --json
+# Zsh (add to ~/.zshrc)
+source <(vfrog completion zsh)
+
+# Bash (add to ~/.bashrc)
+source <(vfrog completion bash)
+
+# Fish
+vfrog completion fish > ~/.config/fish/completions/vfrog.fish
+
+# PowerShell
+vfrog completion powershell | Out-String | Invoke-Expression
 ```
 
-## Configuration Files
+After setup, test with:
+```bash
+vfrog <TAB>              # Shows all commands
+vfrog iterations <TAB>   # Shows subcommands
+vfrog --<TAB>            # Shows global flags
+```
 
-Each environment binary uses a separate config file to avoid conflicts:
-
-- `vfrog-local` → `~/.vfrog/config-local.json`
-- `vfrog-dev` → `~/.vfrog/config-dev.json`
-- `vfrog-staging` → `~/.vfrog/config-staging.json`
-- `vfrog` (production) → `~/.vfrog/config-production.json`
-
-This means you can have different organisations, projects, and authentication tokens for each environment without interference.
-
-## Context Requirements
-
-- `organisation_id` must be set to use `projects` commands
-- `project_id` must be set to use `dataset_images`, `objects`, and `iterations` commands
-- When `organisation_id` changes, `project_id` is automatically cleared
+---
 
 ## CI/CD Usage
 
-For CI/CD automation:
-
 ```bash
-# Download the correct binary for your environment
+# Download the binary
 curl -L https://github.com/vfrog/vfrog-cli/releases/latest/download/vfrog-linux-amd64 -o vfrog
 chmod +x vfrog
 
-# Login
+# Authenticate
 vfrog login --email ci@example.com --password $CI_PASSWORD
 
-# Configure context
+# Set context
 vfrog config set organisation --organisation_id $ORG_ID
 vfrog config set project --project_id $PROJECT_ID
 
-# Use the CLI
-vfrog dataset_images upload https://example.com/image.jpg
+# Upload images from a directory
+vfrog dataset_images upload --dir ./training-images/
+
+# Or import from CSV
+vfrog dataset_images import --csv ./image-manifest.csv
+
+# Create and run an iteration
+vfrog objects create https://cdn.example.com/product.jpg --label "Widget"
+vfrog config set object --object_id $(vfrog objects list --json | jq -r '.[0].id')
+vfrog iterations create $(vfrog objects list --json | jq -r '.[0].id') --random 100
+
+# Run SSAT and wait for completion
+vfrog iterations ssat --iteration_number 1
+vfrog iterations status --iteration_number 1 --watch
+
+# Train and wait
+vfrog iterations train --iteration_number 1
+vfrog iterations status --iteration_number 1 --watch
+
+# Export results
+vfrog export yolo --iteration_id $(vfrog iterations list --json | jq -r '.[0].id') --output ./dataset --zip
 ```
+
+All commands support `--json` output for scripting:
+
+```bash
+# Get project ID from JSON output
+PROJECT_ID=$(vfrog projects list --json | jq -r '.[0].id')
+
+# Get iteration status
+STATUS=$(vfrog iterations status --iteration_id $ITER_ID --json | jq -r '.status')
+```
+
+---
 
 ## Development
 
@@ -294,32 +643,25 @@ cd vfrog-cli
 go build -o vfrog ./main.go
 ```
 
-### Building for Local Development
-
-To build a CLI that connects to your local development environment (docker-compose):
-
-```bash
-# Build vfrog-local (points to localhost:8005 for API project)
-make build-local LOCAL_SUPABASE_URL="https://your-supabase.supabase.co" LOCAL_SUPABASE_KEY="your-publishable-key"
-
-# Or set environment variables
-export LOCAL_SUPABASE_URL="https://your-supabase.supabase.co"
-export LOCAL_SUPABASE_KEY="your-publishable-key"
-make build-local
+On Windows:
+```powershell
+go build -o vfrog.exe ./main.go
 ```
 
-**Prerequisites:**
-
-1. Start local services: `cd ../annotator_local_dev && docker-compose up -d`
-2. Ensure API project is running on `http://localhost:8005`
-3. Ensure Supabase credentials are configured in your `.env` file
-
-**Usage:**
+### Building with Environment Credentials
 
 ```bash
-# Use vfrog-local instead of vfrog-dev
-./vfrog-local login
-./vfrog-local projects list
+# Dev (fetches credentials from GCP Secret Manager)
+make build-dev-gcp
+
+# Staging
+make build-staging STAGING_SUPABASE_URL="..." STAGING_SUPABASE_KEY="..."
+
+# Production
+make build-prod PROD_SUPABASE_URL="..." PROD_SUPABASE_KEY="..."
+
+# Local development (connects to localhost services)
+make build-local-gcp
 ```
 
 ### Building with Custom Credentials
@@ -340,34 +682,33 @@ go test ./...
 
 ```
 vfrog-cli/
-├── cmd/              # Cobra commands
-│   ├── root.go
-│   ├── version.go
-│   ├── login.go
-│   ├── config.go
-│   ├── organisations.go
-│   ├── projects.go
-│   ├── dataset_images.go
-│   ├── objects.go
-│   ├── iterations.go
-│   └── inference.go
+├── cmd/                   # Cobra commands
+│   ├── root.go            # Root command, global flags
+│   ├── version.go         # Version command
+│   ├── login.go           # Authentication
+│   ├── config.go          # Config management
+│   ├── organisations.go   # Organisation commands
+│   ├── projects.go        # Project CRUD (list, create, delete)
+│   ├── dataset_images.go  # Dataset image management (upload, import, list, delete)
+│   ├── objects.go         # Object/product image management
+│   ├── iterations.go      # SSAT workflow (ssat, train, status, annotations, control, halo)
+│   ├── inference.go       # CV inference (single, batch, status, feedback)
+│   └── export.go          # Data export (YOLO, JSON)
 ├── internal/
-│   ├── config/       # Configuration management (with build-time defaults)
-│   ├── auth/         # Supabase authentication
+│   ├── config/            # Configuration with build-time defaults
+│   ├── auth/              # Supabase authentication + token refresh
 │   ├── api/
-│   │   ├── supabase/ # Supabase PostgREST client
-│   │   ├── vfrogapi/ # vfrog API client
-│   │   └── inference/ # Inference server client
-│   └── output/       # Output formatting
+│   │   ├── supabase/      # Supabase PostgREST client (CRUD)
+│   │   ├── vfrogapi/      # vfrog API client (inference, SSAT, training)
+│   │   └── storage/       # S3 file upload via signed URLs
+│   └── output/            # Table and JSON output formatting
+├── Makefile               # Build targets for all environments
 ├── .github/workflows/
-│   └── release.yml   # CI/CD for building and releasing binaries
+│   └── release.yml        # CI/CD for building and releasing binaries
 └── main.go
 ```
 
-## Limitations (v0.1)
-
-- Local file uploads for `dataset_images upload` and `objects create` are not supported (URLs only)
-- Device-code login flow not implemented
+---
 
 ## License
 

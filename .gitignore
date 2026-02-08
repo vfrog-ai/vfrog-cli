@@ -32,3 +32,6 @@ Thumbs.db
 
 # Dist folder
 dist/
+.vfrog/config-dev.json
+.vfrog/config-staging.json
+.vfrog/config-production.json

@@ -3,10 +3,13 @@ package cmd
 import (
 	"fmt"
 	"net/url"
+	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/spf13/cobra"
 
+	"github.com/vfrog/vfrog-cli/internal/api/storage"
 	"github.com/vfrog/vfrog-cli/internal/api/supabase"
 	"github.com/vfrog/vfrog-cli/internal/auth"
 	"github.com/vfrog/vfrog-cli/internal/config"
@@ -24,16 +27,16 @@ var objectsCmd = &cobra.Command{
 var objectsCreateCmd = &cobra.Command{
 	Use:   "create [url]",
 	Short: "Create a new object",
-	Long:  `Create a new object (product image) from a URL. In v0.1, only URLs are supported.`,
-	Args:  cobra.ExactArgs(1),
+	Long: `Create a new object (product image) from a URL or local file.
+
+Examples:
+  vfrog objects create https://example.com/product.jpg --label "My Product"
+  vfrog objects create --file ./product.jpg --label "My Product"`,
+	Args: cobra.MaximumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		imageURL := args[0]
 		label, _ := cmd.Flags().GetString("label")
 		externalID, _ := cmd.Flags().GetString("external_id")
-
-		if _, err := url.Parse(imageURL); err != nil {
-			return fmt.Errorf("invalid URL: %s", imageURL)
-		}
+		filePath, _ := cmd.Flags().GetString("file")
 
 		cfg, err := config.Load()
 		if err != nil {
@@ -58,29 +61,49 @@ var objectsCreateCmd = &cobra.Command{
 			return fmt.Errorf("failed to get user ID: %w", err)
 		}
 
-		filename := imageURL
-		if parsedURL, err := url.Parse(imageURL); err == nil {
-			pathParts := strings.Split(parsedURL.Path, "/")
-			if len(pathParts) > 0 {
-				filename = pathParts[len(pathParts)-1]
+		var imageURL string
+		var filename string
+
+		if filePath != "" {
+			// Upload local file
+			if _, err := os.Stat(filePath); os.IsNotExist(err) {
+				return fmt.Errorf("file not found: %s", filePath)
 			}
+
+			fileURL, err := storage.UploadFile(cfg, accessToken, "product-images", filePath)
+			if err != nil {
+				return fmt.Errorf("failed to upload file: %w", err)
+			}
+
+			imageURL = fileURL
+			filename = filepath.Base(filePath)
+		} else if len(args) == 1 {
+			imageURL = args[0]
+			if _, err := url.Parse(imageURL); err != nil {
+				return fmt.Errorf("invalid URL: %s", imageURL)
+			}
+
+			filename = imageURL
+			if parsedURL, err := url.Parse(imageURL); err == nil {
+				pathParts := strings.Split(parsedURL.Path, "/")
+				if len(pathParts) > 0 {
+					filename = pathParts[len(pathParts)-1]
+				}
+			}
+		} else {
+			return fmt.Errorf("provide a URL as argument or use --file for local file upload")
 		}
 
-		mimeType := "image/jpeg"
-		if strings.HasSuffix(strings.ToLower(filename), ".png") {
-			mimeType = "image/png"
-		} else if strings.HasSuffix(strings.ToLower(filename), ".webp") {
-			mimeType = "image/webp"
-		}
+		mimeType := storage.DetectContentType(filename)
 
 		objectData := map[string]interface{}{
 			"project_id": cfg.ProjectID,
 			"user_id":    userID,
 			"filename":   filename,
 			"file_path":  imageURL,
+			"file_url":   imageURL,
 			"file_size":  0,
 			"mime_type":  mimeType,
-			"processed":  false,
 		}
 
 		if label != "" {
@@ -217,5 +240,6 @@ func init() {
 
 	objectsCreateCmd.Flags().String("label", "", "Label for the object")
 	objectsCreateCmd.Flags().String("external_id", "", "External ID for the object")
+	objectsCreateCmd.Flags().String("file", "", "Local image file to upload")
 	objectsDeleteCmd.Flags().String("object_id", "", "Object ID to delete")
 }

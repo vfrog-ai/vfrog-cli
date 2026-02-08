@@ -258,6 +258,53 @@ func (c *SSATClient) NextIteration(params NextIterationParams) (map[string]inter
 	return result, nil
 }
 
+// ControlParams represents the parameters for SSAT control
+type ControlParams struct {
+	ProjectIterationID string              `json:"project_iteration_id"`
+	DatasetImages      []InferenceImageRef `json:"dataset_images"`
+	OrganisationID     string              `json:"organisation_id"`
+}
+
+// Control submits SSAT control feedback via the API project
+func (c *SSATClient) Control(params ControlParams) (map[string]interface{}, error) {
+	reqURL := fmt.Sprintf("%s/api/v1/ssat/control", c.baseURL)
+
+	jsonData, err := json.Marshal(params)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal payload: %w", err)
+	}
+
+	req, err := http.NewRequest("POST", reqURL, bytes.NewBuffer(jsonData))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", c.accessToken))
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to send request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read response: %w", err)
+	}
+
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return nil, fmt.Errorf("request failed (status %d): %s", resp.StatusCode, string(body))
+	}
+
+	var result map[string]interface{}
+	if err := json.Unmarshal(body, &result); err != nil {
+		return map[string]interface{}{}, nil
+	}
+
+	return result, nil
+}
+
 // RestartIterationParams represents the parameters for restarting an iteration
 type RestartIterationParams struct {
 	IterationID string `json:"iteration_id"`

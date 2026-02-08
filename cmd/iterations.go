@@ -231,14 +231,11 @@ var iterationsSSATCmd = &cobra.Command{
 	Use:   "ssat",
 	Short: "Start SSAT auto-annotation for an iteration",
 	Long: `Start the SSAT (Semi-Supervised Active Training) annotation workflow for an iteration.
-	
+
 For iteration 1: Uses the annotator service with cutout extraction and matching.
 For iteration 2+: Uses inference with a trained model from the previous iteration.
 
-By default, the number of dataset images processed depends on the iteration number:
-- Iteration 1: 20 images
-- Iteration 2: 40 images
-- Iteration 3+: 80 images
+By default, ALL dataset images linked to the iteration are used.
 
 Use --random X to randomly select X dataset images from the project's dataset_images instead
 of using the images linked to the iteration.
@@ -370,19 +367,7 @@ The iteration must be in 'created' status to start SSAT.`,
 				}
 			}
 		} else {
-			// Use default behavior: get linked dataset images
-			// Determine number of images based on iteration number
-			var imageCount int
-			switch iterationNumber {
-			case 1:
-				imageCount = 20
-			case 2:
-				imageCount = 40
-			default:
-				imageCount = 80
-			}
-
-			// Get linked dataset images for this iteration
+			// Use all linked dataset images for this iteration
 			linkedImages, err := client.Get("project_iteration_dataset_images", map[string]string{
 				"project_iteration_id": fmt.Sprintf("eq.%s", iterationID),
 				"select":               "id,dataset_image_id,dataset_images(id,file_url)",
@@ -395,19 +380,7 @@ The iteration must be in 'created' status to start SSAT.`,
 				return fmt.Errorf("no dataset images linked to this iteration. Create the iteration with dataset images first, or use --random X to select from project dataset images")
 			}
 
-			// Limit to imageCount
-			if len(linkedImages) > imageCount {
-				// Randomly select imageCount images
-				rand.Seed(time.Now().UnixNano())
-				selectedIndices := rand.Perm(len(linkedImages))[:imageCount]
-				selected := make([]map[string]interface{}, imageCount)
-				for i, idx := range selectedIndices {
-					selected[i] = linkedImages[idx]
-				}
-				datasetImageLinks = selected
-			} else {
-				datasetImageLinks = linkedImages
-			}
+			datasetImageLinks = linkedImages
 		}
 
 		// Check if we have a model (iteration 2+)
@@ -954,6 +927,266 @@ func runInferenceSSAT(cmd *cobra.Command, cfg *config.Config, client *supabase.C
 	return nil
 }
 
+// iterationsAnnotationsCmd represents the iterations annotations command
+var iterationsAnnotationsCmd = &cobra.Command{
+	Use:   "annotations",
+	Short: "List annotations for an iteration",
+	Long: `List annotated images and their annotations for an iteration.
+
+Example:
+  vfrog iterations annotations --iteration_id <id>
+  vfrog iterations annotations --iteration_number 1 --object_id <id>`,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		cfg, err := config.Load()
+		if err != nil {
+			return fmt.Errorf("failed to load config: %w", err)
+		}
+
+		if err := cfg.RequireProjectID(); err != nil {
+			return err
+		}
+
+		client, err := supabase.NewClient(cfg)
+		if err != nil {
+			return fmt.Errorf("failed to create Supabase client: %w", err)
+		}
+
+		iterationID, err := getIterationID(cmd, cfg, client)
+		if err != nil {
+			return err
+		}
+
+		annotatedImages, err := client.Get("project_iteration_annotated_images", map[string]string{
+			"project_iteration_id": fmt.Sprintf("eq.%s", iterationID),
+			"select":               "id,dataset_images_id,annotation,created_at",
+		})
+		if err != nil {
+			return fmt.Errorf("failed to get annotations: %w", err)
+		}
+
+		if jsonOutput {
+			return output.PrintJSON(annotatedImages)
+		}
+
+		if len(annotatedImages) == 0 {
+			fmt.Println("No annotations found.")
+			return nil
+		}
+
+		table := output.NewTable("DATASET_IMAGE_ID", "ANNOTATIONS", "CREATED_AT")
+		for _, img := range annotatedImages {
+			dsID := fmt.Sprintf("%v", img["dataset_images_id"])
+			annotationCount := 0
+			if ann, ok := img["annotation"].([]interface{}); ok {
+				annotationCount = len(ann)
+			}
+			createdAt := "-"
+			if ca, ok := img["created_at"].(string); ok {
+				createdAt = ca
+			}
+			table.AddRow(dsID, fmt.Sprintf("%d", annotationCount), createdAt)
+		}
+		table.Print()
+
+		return nil
+	},
+}
+
+// iterationsStatusCmd represents the iterations status command
+var iterationsStatusCmd = &cobra.Command{
+	Use:   "status",
+	Short: "Check iteration status",
+	Long: `Check the current status of an iteration. Use --watch to poll until completion.
+
+Example:
+  vfrog iterations status --iteration_id <id>
+  vfrog iterations status --iteration_id <id> --watch --interval 5`,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		watch, _ := cmd.Flags().GetBool("watch")
+		interval, _ := cmd.Flags().GetInt("interval")
+		if interval <= 0 {
+			interval = 5
+		}
+
+		cfg, err := config.Load()
+		if err != nil {
+			return fmt.Errorf("failed to load config: %w", err)
+		}
+
+		if err := cfg.RequireProjectID(); err != nil {
+			return err
+		}
+
+		client, err := supabase.NewClient(cfg)
+		if err != nil {
+			return fmt.Errorf("failed to create Supabase client: %w", err)
+		}
+
+		iterationID, err := getIterationID(cmd, cfg, client)
+		if err != nil {
+			return err
+		}
+
+		for {
+			iterations, err := client.Get("project_iteration", map[string]string{
+				"id":     fmt.Sprintf("eq.%s", iterationID),
+				"select": "id,status,trained_status,task_id,created_at,updated_at",
+			})
+			if err != nil {
+				return fmt.Errorf("failed to get iteration status: %w", err)
+			}
+
+			if len(iterations) == 0 {
+				return fmt.Errorf("iteration not found: %s", iterationID)
+			}
+
+			iter := iterations[0]
+
+			if jsonOutput {
+				return output.PrintJSON(iter)
+			}
+
+			status := fmt.Sprintf("%v", iter["status"])
+			trainedStatus := "-"
+			if ts, ok := iter["trained_status"].(string); ok && ts != "" {
+				trainedStatus = ts
+			}
+			taskID := "-"
+			if tid, ok := iter["task_id"].(string); ok && tid != "" {
+				taskID = tid
+			}
+
+			if watch {
+				fmt.Printf("\rStatus: %-15s Trained: %-15s Task: %s", status, trainedStatus, taskID)
+			} else {
+				fmt.Printf("Iteration ID: %s\n", iterationID)
+				fmt.Printf("Status: %s\n", status)
+				fmt.Printf("Trained Status: %s\n", trainedStatus)
+				fmt.Printf("Task ID: %s\n", taskID)
+				if ca, ok := iter["created_at"].(string); ok {
+					fmt.Printf("Created: %s\n", ca)
+				}
+				if ua, ok := iter["updated_at"].(string); ok {
+					fmt.Printf("Updated: %s\n", ua)
+				}
+			}
+
+			if !watch {
+				return nil
+			}
+
+			// Check for terminal status
+			if status == "completed" || status == "failed" {
+				fmt.Println() // newline after watch mode
+				return nil
+			}
+
+			time.Sleep(time.Duration(interval) * time.Second)
+		}
+	},
+}
+
+// iterationsControlCmd represents the iterations control command
+var iterationsControlCmd = &cobra.Command{
+	Use:   "control",
+	Short: "Run SSAT control for an iteration",
+	Long: `Submit SSAT control for an iteration. Fetches linked dataset images and submits
+them for control quality assessment.
+
+Example:
+  vfrog iterations control --iteration_id <id>`,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		cfg, err := config.Load()
+		if err != nil {
+			return fmt.Errorf("failed to load config: %w", err)
+		}
+
+		if err := cfg.RequireOrganisationID(); err != nil {
+			return err
+		}
+
+		if err := cfg.RequireProjectID(); err != nil {
+			return err
+		}
+
+		client, err := supabase.NewClient(cfg)
+		if err != nil {
+			return fmt.Errorf("failed to create Supabase client: %w", err)
+		}
+
+		iterationID, err := getIterationID(cmd, cfg, client)
+		if err != nil {
+			return err
+		}
+
+		// Get linked dataset images
+		linkedImages, err := client.Get("project_iteration_dataset_images", map[string]string{
+			"project_iteration_id": fmt.Sprintf("eq.%s", iterationID),
+			"select":               "id,dataset_image_id,dataset_images(id,file_url)",
+		})
+		if err != nil {
+			return fmt.Errorf("failed to get dataset images: %w", err)
+		}
+
+		if len(linkedImages) == 0 {
+			return fmt.Errorf("no dataset images linked to this iteration")
+		}
+
+		// Build dataset images list
+		datasetImages := make([]vfrogapi.InferenceImageRef, 0, len(linkedImages))
+		for _, link := range linkedImages {
+			if dsImg, ok := link["dataset_images"].(map[string]interface{}); ok {
+				imgID := ""
+				if id, ok := link["dataset_image_id"].(string); ok {
+					imgID = id
+				}
+				imgURL := ""
+				if fileURL, ok := dsImg["file_url"].(string); ok && fileURL != "" {
+					imgURL = fileURL
+				}
+				if imgID != "" && imgURL != "" {
+					datasetImages = append(datasetImages, vfrogapi.InferenceImageRef{
+						ID:      imgID,
+						FileURL: imgURL,
+					})
+				}
+			}
+		}
+
+		if len(datasetImages) == 0 {
+			return fmt.Errorf("no valid dataset images found")
+		}
+
+		accessToken, err := getAccessToken(cfg)
+		if err != nil {
+			return fmt.Errorf("authentication required: %w. Run 'vfrog login' first", err)
+		}
+
+		ssatClient, err := vfrogapi.NewSSATClient(cfg, accessToken)
+		if err != nil {
+			return fmt.Errorf("failed to create API client: %w", err)
+		}
+
+		params := vfrogapi.ControlParams{
+			ProjectIterationID: iterationID,
+			DatasetImages:      datasetImages,
+			OrganisationID:     cfg.OrganisationID,
+		}
+
+		result, err := ssatClient.Control(params)
+		if err != nil {
+			return fmt.Errorf("failed to submit control: %w", err)
+		}
+
+		if jsonOutput {
+			return output.PrintJSON(result)
+		}
+
+		output.PrintSuccess(fmt.Sprintf("Control submitted for iteration %s with %d dataset images", iterationID, len(datasetImages)))
+		return nil
+	},
+}
+
 // iterationsNextCmd represents the iterations next command
 var iterationsNextCmd = &cobra.Command{
 	Use:   "next",
@@ -1098,8 +1331,24 @@ func init() {
 	iterationsCmd.AddCommand(iterationsHaloCmd)
 	iterationsCmd.AddCommand(iterationsNextCmd)
 	iterationsCmd.AddCommand(iterationsRestartCmd)
+	iterationsCmd.AddCommand(iterationTrainCmd)
+	iterationsCmd.AddCommand(iterationsAnnotationsCmd)
+	iterationsCmd.AddCommand(iterationsStatusCmd)
+	iterationsCmd.AddCommand(iterationsControlCmd)
 
-	rootCmd.AddCommand(iterationTrainCmd)
+	// Hidden alias: "vfrog iteration train" still works for backward compat
+	iterationAliasCmd := &cobra.Command{Use: "iteration", Hidden: true}
+	iterationAliasTrainCmd := &cobra.Command{
+		Use:   iterationTrainCmd.Use,
+		Short: iterationTrainCmd.Short,
+		Long:  iterationTrainCmd.Long,
+		RunE:  iterationTrainCmd.RunE,
+	}
+	iterationAliasTrainCmd.Flags().String("iteration_id", "", "Iteration ID to train")
+	iterationAliasTrainCmd.Flags().Int("iteration_number", 0, "Iteration number")
+	iterationAliasTrainCmd.Flags().String("object_id", "", "Object (product image) ID")
+	iterationAliasCmd.AddCommand(iterationAliasTrainCmd)
+	rootCmd.AddCommand(iterationAliasCmd)
 
 	iterationsListCmd.Flags().String("object_id", "", "Object (product image) ID")
 	iterationsCreateCmd.Flags().Int("random", 20, "Number of random dataset images to select")
@@ -1123,4 +1372,15 @@ func init() {
 	iterationsRestartCmd.Flags().String("iteration_id", "", "Iteration ID to restart")
 	iterationsRestartCmd.Flags().Int("iteration_number", 0, "Iteration number (uses object_id from config if not provided)")
 	iterationsRestartCmd.Flags().String("object_id", "", "Object (product image) ID (uses config value if not provided)")
+	iterationsAnnotationsCmd.Flags().String("iteration_id", "", "Iteration ID")
+	iterationsAnnotationsCmd.Flags().Int("iteration_number", 0, "Iteration number (uses object_id from config if not provided)")
+	iterationsAnnotationsCmd.Flags().String("object_id", "", "Object (product image) ID (uses config value if not provided)")
+	iterationsStatusCmd.Flags().String("iteration_id", "", "Iteration ID")
+	iterationsStatusCmd.Flags().Int("iteration_number", 0, "Iteration number (uses object_id from config if not provided)")
+	iterationsStatusCmd.Flags().String("object_id", "", "Object (product image) ID (uses config value if not provided)")
+	iterationsStatusCmd.Flags().Bool("watch", false, "Poll until iteration reaches terminal status")
+	iterationsStatusCmd.Flags().Int("interval", 5, "Polling interval in seconds (used with --watch)")
+	iterationsControlCmd.Flags().String("iteration_id", "", "Iteration ID")
+	iterationsControlCmd.Flags().Int("iteration_number", 0, "Iteration number (uses object_id from config if not provided)")
+	iterationsControlCmd.Flags().String("object_id", "", "Object (product image) ID (uses config value if not provided)")
 }

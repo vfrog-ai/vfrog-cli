@@ -1,12 +1,17 @@
 package cmd
 
 import (
+	"encoding/csv"
 	"fmt"
+	"io"
 	"net/url"
+	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/spf13/cobra"
 
+	"github.com/vfrog/vfrog-cli/internal/api/storage"
 	"github.com/vfrog/vfrog-cli/internal/api/supabase"
 	"github.com/vfrog/vfrog-cli/internal/auth"
 	"github.com/vfrog/vfrog-cli/internal/config"
@@ -23,10 +28,24 @@ var datasetImagesCmd = &cobra.Command{
 // datasetImagesUploadCmd represents the dataset_images upload command
 var datasetImagesUploadCmd = &cobra.Command{
 	Use:   "upload [url1] [url2] ...",
-	Short: "Upload dataset images from URLs",
-	Long:  `Upload dataset images to your project from URLs. In v0.1, only URLs are supported.`,
-	Args:  cobra.MinimumNArgs(1),
+	Short: "Upload dataset images from URLs or local files",
+	Long: `Upload dataset images to your project from URLs or local files.
+
+URLs must be persistent and publicly accessible, as images are referenced by URL
+and not stored on vfrog servers. Ensure URLs do not expire or require authentication.
+
+Use --file or --dir flags to upload local files (uploaded to S3 via signed URL).
+Use 'dataset_images import --csv' for bulk import from CSV files.
+
+Examples:
+  vfrog dataset_images upload https://example.com/img1.jpg https://example.com/img2.jpg
+  vfrog dataset_images upload --file ./photo.jpg
+  vfrog dataset_images upload --dir ./images/`,
+	Args: cobra.ArbitraryArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
+		filePath, _ := cmd.Flags().GetString("file")
+		dirPath, _ := cmd.Flags().GetString("dir")
+
 		cfg, err := config.Load()
 		if err != nil {
 			return fmt.Errorf("failed to load config: %w", err)
@@ -52,9 +71,207 @@ var datasetImagesUploadCmd = &cobra.Command{
 
 		var results []map[string]interface{}
 
-		for _, imageURL := range args {
+		// Handle local file upload
+		if filePath != "" || dirPath != "" {
+			var filePaths []string
+
+			if filePath != "" {
+				filePaths = append(filePaths, filePath)
+			}
+
+			if dirPath != "" {
+				entries, err := os.ReadDir(dirPath)
+				if err != nil {
+					return fmt.Errorf("failed to read directory: %w", err)
+				}
+				for _, entry := range entries {
+					if entry.IsDir() {
+						continue
+					}
+					ext := strings.ToLower(filepath.Ext(entry.Name()))
+					if ext == ".jpg" || ext == ".jpeg" || ext == ".png" || ext == ".webp" || ext == ".gif" || ext == ".bmp" {
+						filePaths = append(filePaths, filepath.Join(dirPath, entry.Name()))
+					}
+				}
+			}
+
+			if len(filePaths) == 0 {
+				return fmt.Errorf("no image files found")
+			}
+
+			for _, fp := range filePaths {
+				fileURL, err := storage.UploadFile(cfg, accessToken, "dataset-images", fp)
+				if err != nil {
+					fmt.Fprintf(cmd.ErrOrStderr(), "Warning: failed to upload %s: %v\n", fp, err)
+					continue
+				}
+
+				filename := filepath.Base(fp)
+				imageData := map[string]interface{}{
+					"project_id": cfg.ProjectID,
+					"user_id":    userID,
+					"filename":   filename,
+					"file_path":  fileURL,
+					"file_url":   fileURL,
+				}
+
+				result, err := client.Post("dataset_images", imageData)
+				if err != nil {
+					fmt.Fprintf(cmd.ErrOrStderr(), "Warning: failed to create record for %s: %v\n", fp, err)
+					continue
+				}
+
+				results = append(results, result)
+			}
+		} else {
+			// Handle URL upload (original behavior)
+			if len(args) == 0 {
+				return fmt.Errorf("provide URLs as arguments, or use --file/--dir for local files")
+			}
+
+			for _, imageURL := range args {
+				if _, err := url.Parse(imageURL); err != nil {
+					return fmt.Errorf("invalid URL: %s", imageURL)
+				}
+
+				filename := imageURL
+				if parsedURL, err := url.Parse(imageURL); err == nil {
+					pathParts := strings.Split(parsedURL.Path, "/")
+					if len(pathParts) > 0 {
+						filename = pathParts[len(pathParts)-1]
+					}
+				}
+
+				imageData := map[string]interface{}{
+					"project_id": cfg.ProjectID,
+					"user_id":    userID,
+					"filename":   filename,
+					"file_path":  imageURL,
+					"file_url":   imageURL,
+				}
+
+				result, err := client.Post("dataset_images", imageData)
+				if err != nil {
+					return fmt.Errorf("failed to upload %s: %w", imageURL, err)
+				}
+
+				results = append(results, result)
+			}
+		}
+
+		if jsonOutput {
+			return output.PrintJSON(results)
+		}
+
+		output.PrintSuccess(fmt.Sprintf("Uploaded %d dataset image(s)", len(results)))
+		for _, r := range results {
+			fmt.Printf("  - %s (ID: %v)\n", r["filename"], r["id"])
+		}
+
+		return nil
+	},
+}
+
+// datasetImagesImportCmd represents the dataset_images import command
+var datasetImagesImportCmd = &cobra.Command{
+	Use:   "import",
+	Short: "Import dataset images from CSV",
+	Long: `Import dataset images from a CSV file.
+
+CSV columns (with header row): image_url, external_id, label
+Only image_url is required. Images are uploaded in batches of 5.
+
+Example:
+  vfrog dataset_images import --csv ./images.csv`,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		csvPath, _ := cmd.Flags().GetString("csv")
+		if csvPath == "" {
+			return fmt.Errorf("--csv is required")
+		}
+
+		cfg, err := config.Load()
+		if err != nil {
+			return fmt.Errorf("failed to load config: %w", err)
+		}
+
+		if err := cfg.RequireProjectID(); err != nil {
+			return err
+		}
+
+		client, err := supabase.NewClient(cfg)
+		if err != nil {
+			return fmt.Errorf("failed to create Supabase client: %w", err)
+		}
+
+		accessToken, err := auth.GetValidToken(cfg)
+		if err != nil {
+			return fmt.Errorf("failed to get access token: %w", err)
+		}
+		userID, err := supabase.DecodeJWT(accessToken)
+		if err != nil {
+			return fmt.Errorf("failed to get user ID: %w", err)
+		}
+
+		// Parse CSV
+		file, err := os.Open(csvPath)
+		if err != nil {
+			return fmt.Errorf("failed to open CSV file: %w", err)
+		}
+		defer file.Close()
+
+		reader := csv.NewReader(file)
+
+		// Read header
+		header, err := reader.Read()
+		if err != nil {
+			return fmt.Errorf("failed to read CSV header: %w", err)
+		}
+
+		// Build column index map (case-insensitive)
+		colIdx := make(map[string]int)
+		for i, col := range header {
+			colIdx[strings.ToLower(strings.TrimSpace(col))] = i
+		}
+
+		urlCol, hasURL := colIdx["image_url"]
+		if !hasURL {
+			return fmt.Errorf("CSV must have an 'image_url' column")
+		}
+
+		extIDCol, hasExtID := colIdx["external_id"]
+		labelCol, hasLabel := colIdx["label"]
+
+		var results []map[string]interface{}
+		var errors []string
+		rowNum := 1
+
+		for {
+			record, err := reader.Read()
+			if err == io.EOF {
+				break
+			}
+			if err != nil {
+				errors = append(errors, fmt.Sprintf("row %d: %v", rowNum+1, err))
+				rowNum++
+				continue
+			}
+
+			rowNum++
+
+			if urlCol >= len(record) {
+				errors = append(errors, fmt.Sprintf("row %d: missing image_url column", rowNum))
+				continue
+			}
+
+			imageURL := strings.TrimSpace(record[urlCol])
+			if imageURL == "" {
+				errors = append(errors, fmt.Sprintf("row %d: empty image_url", rowNum))
+				continue
+			}
+
 			if _, err := url.Parse(imageURL); err != nil {
-				return fmt.Errorf("invalid URL: %s", imageURL)
+				errors = append(errors, fmt.Sprintf("row %d: invalid URL: %s", rowNum, imageURL))
+				continue
 			}
 
 			filename := imageURL
@@ -73,21 +290,43 @@ var datasetImagesUploadCmd = &cobra.Command{
 				"file_url":   imageURL,
 			}
 
+			if hasExtID && extIDCol < len(record) {
+				extID := strings.TrimSpace(record[extIDCol])
+				if extID != "" {
+					imageData["external_id"] = extID
+				}
+			}
+
+			if hasLabel && labelCol < len(record) {
+				label := strings.TrimSpace(record[labelCol])
+				if label != "" {
+					imageData["label"] = label
+				}
+			}
+
 			result, err := client.Post("dataset_images", imageData)
 			if err != nil {
-				return fmt.Errorf("failed to upload %s: %w", imageURL, err)
+				errors = append(errors, fmt.Sprintf("row %d (%s): %v", rowNum, filename, err))
+				continue
 			}
 
 			results = append(results, result)
 		}
 
 		if jsonOutput {
-			return output.PrintJSON(results)
+			return output.PrintJSON(map[string]interface{}{
+				"imported": len(results),
+				"errors":   len(errors),
+				"results":  results,
+			})
 		}
 
-		output.PrintSuccess(fmt.Sprintf("Uploaded %d dataset image(s)", len(results)))
-		for _, r := range results {
-			fmt.Printf("  - %s (ID: %v)\n", r["filename"], r["id"])
+		output.PrintSuccess(fmt.Sprintf("Imported %d dataset image(s) from CSV", len(results)))
+		if len(errors) > 0 {
+			fmt.Printf("Errors (%d):\n", len(errors))
+			for _, e := range errors {
+				fmt.Printf("  - %s\n", e)
+			}
 		}
 
 		return nil
@@ -187,6 +426,10 @@ func init() {
 	datasetImagesCmd.AddCommand(datasetImagesUploadCmd)
 	datasetImagesCmd.AddCommand(datasetImagesListCmd)
 	datasetImagesCmd.AddCommand(datasetImagesDeleteCmd)
+	datasetImagesCmd.AddCommand(datasetImagesImportCmd)
 
+	datasetImagesUploadCmd.Flags().String("file", "", "Local image file to upload")
+	datasetImagesUploadCmd.Flags().String("dir", "", "Directory of local image files to upload")
 	datasetImagesDeleteCmd.Flags().String("dataset_image_id", "", "Dataset image ID to delete")
+	datasetImagesImportCmd.Flags().String("csv", "", "CSV file path to import")
 }
