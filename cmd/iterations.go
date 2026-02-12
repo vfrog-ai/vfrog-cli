@@ -435,7 +435,7 @@ var iterationsHaloCmd = &cobra.Command{
 
 		iterations, err := client.Get("project_iteration", map[string]string{
 			"id":     fmt.Sprintf("eq.%s", iterationID),
-			"select": "project_id",
+			"select": "project_id,product_image_id",
 		})
 		if err != nil {
 			return fmt.Errorf("failed to get iteration: %w", err)
@@ -447,13 +447,14 @@ var iterationsHaloCmd = &cobra.Command{
 
 		iter := iterations[0]
 		projectID := iter["project_id"].(string)
+		productImageID := iter["product_image_id"].(string)
 
 		platformHost := cfg.PlatformHost
 		if platformHost == "" {
 			platformHost = "https://platform.vfrog.ai"
 		}
 
-		url := fmt.Sprintf("%s/org/%s/proj/%s/halo?iteration=%s", platformHost, cfg.OrganisationID, projectID, iterationID)
+		url := fmt.Sprintf("%s/org/%s/proj/%s/prod/%s/iter/%s/halo", platformHost, cfg.OrganisationID, projectID, productImageID, iterationID)
 
 		if jsonOutput {
 			return output.PrintJSON(map[string]string{"url": url, "iteration_id": iterationID})
@@ -559,7 +560,7 @@ var iterationTrainCmd = &cobra.Command{
 
 		annotatedImagesData, err := client.Get("project_iteration_annotated_images", map[string]string{
 			"project_iteration_id": fmt.Sprintf("eq.%s", iterationID),
-			"select":               "dataset_images_id,annotation",
+			"select":               "project_iteration_dataset_image_id,annotation,project_iteration_dataset_images!inner(dataset_image_id)",
 		})
 		if err != nil {
 			return fmt.Errorf("failed to get annotated images: %w", err)
@@ -567,9 +568,11 @@ var iterationTrainCmd = &cobra.Command{
 
 		annotatedImages := make([]vfrogapi.AnnotatedImageRef, 0, len(annotatedImagesData))
 		for _, annImg := range annotatedImagesData {
-			dsID := ""
-			if id, ok := annImg["dataset_images_id"].(string); ok {
-				dsID = id
+			var dsID string
+			if pidsiData, ok := annImg["project_iteration_dataset_images"].(map[string]interface{}); ok {
+				if id, ok := pidsiData["dataset_image_id"].(string); ok {
+					dsID = id
+				}
 			}
 			var annotations []interface{}
 			if ann, ok := annImg["annotation"].([]interface{}); ok {
@@ -755,9 +758,62 @@ func runAnnotatorSSAT(cmd *cobra.Command, cfg *config.Config, client *supabase.C
 		return fmt.Errorf("failed to create API client: %w", err)
 	}
 
+	// Determine industry: flag > control check
+	industry, _ := cmd.Flags().GetString("industry")
+	if industry == "" {
+		// Run control check to determine industry (like the platform does)
+		controlDatasetImages := make([]vfrogapi.ControlImageRef, 0, len(datasetImages))
+		for _, ds := range datasetImages {
+			controlDatasetImages = append(controlDatasetImages, vfrogapi.ControlImageRef{
+				ID:       ds.ID,
+				ImageURL: ds.ImageURL,
+			})
+		}
+
+		controlParams := vfrogapi.ControlParams{
+			ProjectIterationID: iterationID,
+			DatasetImages:      controlDatasetImages,
+			OrganisationID:     cfg.OrganisationID,
+		}
+
+		if !jsonOutput {
+			fmt.Println("Running control check to determine industry...")
+		}
+
+		controlResult, err := ssatClient.Control(controlParams)
+		if err != nil {
+			return fmt.Errorf("control check failed: %w. Use --industry to specify manually", err)
+		}
+
+		// Extract main_industry from control_json in the response
+		if controlJSON, ok := controlResult["control_json"].(map[string]interface{}); ok {
+			if mi, ok := controlJSON["main_industry"].(string); ok && mi != "" {
+				industry = mi
+			}
+		}
+		if industry == "" {
+			return fmt.Errorf("control check did not return an industry. Use --industry to specify manually (e.g., --industry Manufacturing, --industry Retail)")
+		}
+		if !jsonOutput {
+			fmt.Printf("Industry detected: %s\n", industry)
+		}
+	}
+
+	// Save industry to project_iteration
+	if err := client.Patch("project_iteration", iterationID, map[string]interface{}{
+		"industry": industry,
+	}); err != nil {
+		// Non-fatal: continue even if save fails
+		if !jsonOutput {
+			fmt.Fprintf(cmd.ErrOrStderr(), "Warning: failed to save industry to iteration: %v\n", err)
+		}
+	}
+
 	// Submit batch via API project
 	params := vfrogapi.BatchSubmitParams{
 		ProjectIterationID: iterationID,
+		OrganisationID:     cfg.OrganisationID,
+		Industry:           industry,
 		ProductImage: vfrogapi.ProductImageRef{
 			ID:       productImageID,
 			ImageURL: productImageURL,
@@ -784,11 +840,12 @@ func runAnnotatorSSAT(cmd *cobra.Command, cfg *config.Config, client *supabase.C
 			"iteration_id":   iterationID,
 			"status":         "annotating",
 			"dataset_images": len(datasetImages),
+			"industry":       industry,
 			"method":         "ssat-batch",
 		})
 	}
 
-	output.PrintSuccess(fmt.Sprintf("SSAT started for iteration %s with %d dataset images", iterationID, len(datasetImages)))
+	output.PrintSuccess(fmt.Sprintf("SSAT started for iteration %s with %d dataset images (industry: %s)", iterationID, len(datasetImages), industry))
 	return nil
 }
 
@@ -801,7 +858,7 @@ func runInferenceSSAT(cmd *cobra.Command, cfg *config.Config, client *supabase.C
 	}
 
 	// Get model details
-	models, err := client.Get("models", map[string]string{
+	models, err := client.Get("model", map[string]string{
 		"id":     fmt.Sprintf("eq.%s", modelID),
 		"select": "id,model_path",
 	})
@@ -822,12 +879,17 @@ func runInferenceSSAT(cmd *cobra.Command, cfg *config.Config, client *supabase.C
 		return fmt.Errorf("model has no model_path")
 	}
 
-	// Build dataset images list (use project_iteration_dataset_image.id, not dataset_image_id)
+	// Build dataset images list
 	datasetImages := make([]vfrogapi.InferenceImageRef, 0, len(datasetImageLinks))
 	for _, link := range datasetImageLinks {
 		if dsImg, ok := link["dataset_images"].(map[string]interface{}); ok {
-			// Use the project_iteration_dataset_images.id as the id (not dataset_image_id)
-			imgID := link["id"].(string)
+			// Use project_iteration_dataset_images.id if available, fall back to dataset_image_id
+			imgID := ""
+			if id, ok := link["id"].(string); ok {
+				imgID = id
+			} else if id, ok := link["dataset_image_id"].(string); ok {
+				imgID = id
+			}
 			imgURL := ""
 			if url, ok := dsImg["file_url"].(string); ok && url != "" {
 				imgURL = url
@@ -958,7 +1020,7 @@ Example:
 
 		annotatedImages, err := client.Get("project_iteration_annotated_images", map[string]string{
 			"project_iteration_id": fmt.Sprintf("eq.%s", iterationID),
-			"select":               "id,dataset_images_id,annotation,created_at",
+			"select":               "id,project_iteration_dataset_image_id,annotation,created_at,project_iteration_dataset_images(dataset_image_id)",
 		})
 		if err != nil {
 			return fmt.Errorf("failed to get annotations: %w", err)
@@ -975,7 +1037,15 @@ Example:
 
 		table := output.NewTable("DATASET_IMAGE_ID", "ANNOTATIONS", "CREATED_AT")
 		for _, img := range annotatedImages {
-			dsID := fmt.Sprintf("%v", img["dataset_images_id"])
+			dsID := ""
+			if pidsiData, ok := img["project_iteration_dataset_images"].(map[string]interface{}); ok {
+				if id, ok := pidsiData["dataset_image_id"].(string); ok {
+					dsID = id
+				}
+			}
+			if dsID == "" {
+				dsID = fmt.Sprintf("%v", img["project_iteration_dataset_image_id"])
+			}
 			annotationCount := 0
 			if ann, ok := img["annotation"].([]interface{}); ok {
 				annotationCount = len(ann)
@@ -1133,7 +1203,7 @@ Example:
 		}
 
 		// Build dataset images list
-		datasetImages := make([]vfrogapi.InferenceImageRef, 0, len(linkedImages))
+		datasetImages := make([]vfrogapi.ControlImageRef, 0, len(linkedImages))
 		for _, link := range linkedImages {
 			if dsImg, ok := link["dataset_images"].(map[string]interface{}); ok {
 				imgID := ""
@@ -1145,9 +1215,9 @@ Example:
 					imgURL = fileURL
 				}
 				if imgID != "" && imgURL != "" {
-					datasetImages = append(datasetImages, vfrogapi.InferenceImageRef{
-						ID:      imgID,
-						FileURL: imgURL,
+					datasetImages = append(datasetImages, vfrogapi.ControlImageRef{
+						ID:       imgID,
+						ImageURL: imgURL,
 					})
 				}
 			}
@@ -1322,6 +1392,180 @@ For iteration #2+: Recreates with ssat_model_id from the previous iteration's mo
 	},
 }
 
+// iterationsDeployCmd represents the iterations deploy command
+var iterationsDeployCmd = &cobra.Command{
+	Use:   "deploy",
+	Short: "Deploy a trained model to production",
+	Long: `Deploy a trained model to production by creating a class and model-class mapping.
+
+The iteration must have trained_status 'completed' (training finished, model created).
+This creates a class record, links it to the model, and updates trained_status to 'validated'.
+
+Example:
+  vfrog iterations deploy --iteration_id <id>
+  vfrog iterations deploy --iteration_number 1 --object_id <id>`,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		cfg, err := config.Load()
+		if err != nil {
+			return fmt.Errorf("failed to load config: %w", err)
+		}
+
+		if err := cfg.RequireProjectID(); err != nil {
+			return err
+		}
+
+		if err := cfg.RequireOrganisationID(); err != nil {
+			return err
+		}
+
+		client, err := supabase.NewClient(cfg)
+		if err != nil {
+			return fmt.Errorf("failed to create Supabase client: %w", err)
+		}
+
+		iterationID, err := getIterationID(cmd, cfg, client)
+		if err != nil {
+			return err
+		}
+
+		// Get iteration details
+		iterations, err := client.Get("project_iteration", map[string]string{
+			"id":     fmt.Sprintf("eq.%s", iterationID),
+			"select": "id,project_id,product_image_id,iteration_number,trained_status,model_id",
+		})
+		if err != nil {
+			return fmt.Errorf("failed to get iteration: %w", err)
+		}
+
+		if len(iterations) == 0 {
+			return fmt.Errorf("iteration not found: %s", iterationID)
+		}
+
+		iter := iterations[0]
+		trainedStatus := ""
+		if ts, ok := iter["trained_status"].(string); ok {
+			trainedStatus = ts
+		}
+
+		if trainedStatus == "validated" {
+			return fmt.Errorf("iteration is already deployed (trained_status: validated)")
+		}
+
+		if trainedStatus != "completed" {
+			return fmt.Errorf("iteration must have trained_status 'completed' to deploy (current: %s)", trainedStatus)
+		}
+
+		modelID := ""
+		if mid, ok := iter["model_id"].(string); ok {
+			modelID = mid
+		}
+		if modelID == "" {
+			return fmt.Errorf("iteration has no model_id. Training may not have completed successfully")
+		}
+
+		projectID := iter["project_id"].(string)
+		productImageID := iter["product_image_id"].(string)
+		iterationNumber := int(iter["iteration_number"].(float64))
+
+		// Verify model exists
+		models, err := client.Get("model", map[string]string{
+			"id":     fmt.Sprintf("eq.%s", modelID),
+			"select": "id,name",
+		})
+		if err != nil {
+			return fmt.Errorf("failed to get model: %w", err)
+		}
+
+		if len(models) == 0 {
+			return fmt.Errorf("model not found: %s", modelID)
+		}
+
+		// Get project title
+		projects, err := client.Get("projects", map[string]string{
+			"id":     fmt.Sprintf("eq.%s", projectID),
+			"select": "title",
+		})
+		if err != nil {
+			return fmt.Errorf("failed to get project: %w", err)
+		}
+
+		if len(projects) == 0 {
+			return fmt.Errorf("project not found: %s", projectID)
+		}
+
+		projectTitle := projects[0]["title"].(string)
+
+		// Get product label
+		productImages, err := client.Get("product_images", map[string]string{
+			"id":     fmt.Sprintf("eq.%s", productImageID),
+			"select": "label",
+		})
+		if err != nil {
+			return fmt.Errorf("failed to get product image: %w", err)
+		}
+
+		productLabel := ""
+		if len(productImages) > 0 {
+			if l, ok := productImages[0]["label"].(string); ok {
+				productLabel = l
+			}
+		}
+
+		// Build class name (same format as platform)
+		className := fmt.Sprintf("%s - Iter #%d", projectTitle, iterationNumber)
+		if productLabel != "" {
+			className = fmt.Sprintf("%s - %s - Iter #%d", projectTitle, productLabel, iterationNumber)
+		}
+
+		if !jsonOutput {
+			fmt.Printf("Deploying model %s to production...\n", modelID)
+			fmt.Printf("  Class name: %s\n", className)
+		}
+
+		// Create class record
+		newClass, err := client.Post("class", map[string]interface{}{
+			"name":            className,
+			"organisation_id": cfg.OrganisationID,
+			"project_id":      projectID,
+			"description":     fmt.Sprintf("Validated model from iteration %d", iterationNumber),
+		})
+		if err != nil {
+			return fmt.Errorf("failed to create class: %w", err)
+		}
+
+		classID := newClass["id"].(string)
+
+		// Create model-class mapping
+		_, err = client.Post("model_class_mapping", map[string]interface{}{
+			"model_id": modelID,
+			"class_id": classID,
+		})
+		if err != nil {
+			return fmt.Errorf("failed to create model-class mapping: %w", err)
+		}
+
+		// Update trained_status to validated
+		if err := client.Patch("project_iteration", iterationID, map[string]interface{}{
+			"trained_status": "validated",
+		}); err != nil {
+			return fmt.Errorf("failed to update iteration status: %w", err)
+		}
+
+		if jsonOutput {
+			return output.PrintJSON(map[string]interface{}{
+				"iteration_id": iterationID,
+				"model_id":     modelID,
+				"class_id":     classID,
+				"class_name":   className,
+				"status":       "validated",
+			})
+		}
+
+		output.PrintSuccess(fmt.Sprintf("Model deployed to production (class: %s, class_id: %s)", className, classID))
+		return nil
+	},
+}
+
 func init() {
 	rootCmd.AddCommand(iterationsCmd)
 	iterationsCmd.AddCommand(iterationsListCmd)
@@ -1335,6 +1579,7 @@ func init() {
 	iterationsCmd.AddCommand(iterationsAnnotationsCmd)
 	iterationsCmd.AddCommand(iterationsStatusCmd)
 	iterationsCmd.AddCommand(iterationsControlCmd)
+	iterationsCmd.AddCommand(iterationsDeployCmd)
 
 	// Hidden alias: "vfrog iteration train" still works for backward compat
 	iterationAliasCmd := &cobra.Command{Use: "iteration", Hidden: true}
@@ -1360,6 +1605,7 @@ func init() {
 	iterationsSSATCmd.Flags().String("object_id", "", "Object (product image) ID (uses config value if not provided)")
 	iterationsSSATCmd.Flags().Int("random", 0, "Randomly select N dataset images from the project (overrides default behavior)")
 	iterationsSSATCmd.Flags().Bool("restart", false, "Restart the iteration before running SSAT")
+	iterationsSSATCmd.Flags().String("industry", "", "Industry for SSAT processing (e.g., Retail, Agriculture, Aquaculture, Manufacturing). If not set, runs control check to detect automatically")
 	iterationsHaloCmd.Flags().String("iteration_id", "", "Iteration ID")
 	iterationsHaloCmd.Flags().Int("iteration_number", 0, "Iteration number (uses object_id from config if not provided)")
 	iterationsHaloCmd.Flags().String("object_id", "", "Object (product image) ID (uses config value if not provided)")
@@ -1383,4 +1629,7 @@ func init() {
 	iterationsControlCmd.Flags().String("iteration_id", "", "Iteration ID")
 	iterationsControlCmd.Flags().Int("iteration_number", 0, "Iteration number (uses object_id from config if not provided)")
 	iterationsControlCmd.Flags().String("object_id", "", "Object (product image) ID (uses config value if not provided)")
+	iterationsDeployCmd.Flags().String("iteration_id", "", "Iteration ID to deploy")
+	iterationsDeployCmd.Flags().Int("iteration_number", 0, "Iteration number (uses object_id from config if not provided)")
+	iterationsDeployCmd.Flags().String("object_id", "", "Object (product image) ID (uses config value if not provided)")
 }

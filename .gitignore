@@ -35,3 +35,7 @@ dist/
 .vfrog/config-dev.json
 .vfrog/config-staging.json
 .vfrog/config-production.json
+nul
+/images
+Pepsi 335 can.jpg
+/images-screw

@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 
 	"github.com/spf13/cobra"
 
@@ -100,7 +101,7 @@ Examples:
 			}
 
 			for _, fp := range filePaths {
-				fileURL, err := storage.UploadFile(cfg, accessToken, "dataset-images", fp)
+				uploadResult, err := storage.UploadFile(cfg, accessToken, "dataset-images", fp)
 				if err != nil {
 					fmt.Fprintf(cmd.ErrOrStderr(), "Warning: failed to upload %s: %v\n", fp, err)
 					continue
@@ -111,8 +112,8 @@ Examples:
 					"project_id": cfg.ProjectID,
 					"user_id":    userID,
 					"filename":   filename,
-					"file_path":  fileURL,
-					"file_url":   fileURL,
+					"file_path":  uploadResult.FilePath,
+					"file_url":   uploadResult.FileURL,
 				}
 
 				result, err := client.Post("dataset_images", imageData)
@@ -124,39 +125,71 @@ Examples:
 				results = append(results, result)
 			}
 		} else {
-			// Handle URL upload (original behavior)
+			// Handle URL upload — download and re-upload to vfrog CDN (5 at a time)
 			if len(args) == 0 {
 				return fmt.Errorf("provide URLs as arguments, or use --file/--dir for local files")
 			}
 
+			type uploadResult struct {
+				result   map[string]interface{}
+				imageURL string
+				err      string
+			}
+
+			var mu sync.Mutex
+			sem := make(chan struct{}, 5)
+			var wg sync.WaitGroup
+
 			for _, imageURL := range args {
 				if _, err := url.Parse(imageURL); err != nil {
-					return fmt.Errorf("invalid URL: %s", imageURL)
+					fmt.Fprintf(cmd.ErrOrStderr(), "Warning: invalid URL: %s\n", imageURL)
+					continue
 				}
 
-				filename := imageURL
-				if parsedURL, err := url.Parse(imageURL); err == nil {
-					pathParts := strings.Split(parsedURL.Path, "/")
-					if len(pathParts) > 0 {
-						filename = pathParts[len(pathParts)-1]
+				wg.Add(1)
+				go func(imgURL string) {
+					defer wg.Done()
+					sem <- struct{}{}
+					defer func() { <-sem }()
+
+					filename := imgURL
+					if parsedURL, err := url.Parse(imgURL); err == nil {
+						pathParts := strings.Split(parsedURL.Path, "/")
+						if len(pathParts) > 0 && pathParts[len(pathParts)-1] != "" {
+							filename = pathParts[len(pathParts)-1]
+						}
 					}
-				}
 
-				imageData := map[string]interface{}{
-					"project_id": cfg.ProjectID,
-					"user_id":    userID,
-					"filename":   filename,
-					"file_path":  imageURL,
-					"file_url":   imageURL,
-				}
+					uploadResult, err := storage.UploadFromURL(cfg, accessToken, "dataset-images", imgURL)
+					if err != nil {
+						fmt.Fprintf(cmd.ErrOrStderr(), "Warning: failed to upload %s: %v\n", imgURL, err)
+						return
+					}
 
-				result, err := client.Post("dataset_images", imageData)
-				if err != nil {
-					return fmt.Errorf("failed to upload %s: %w", imageURL, err)
-				}
+					imageData := map[string]interface{}{
+						"project_id": cfg.ProjectID,
+						"user_id":    userID,
+						"filename":   filename,
+						"file_path":  uploadResult.FilePath,
+						"file_url":   uploadResult.FileURL,
+					}
 
-				results = append(results, result)
+					result, err := client.Post("dataset_images", imageData)
+					if err != nil {
+						fmt.Fprintf(cmd.ErrOrStderr(), "Warning: failed to create record for %s: %v\n", imgURL, err)
+						return
+					}
+
+					mu.Lock()
+					results = append(results, result)
+					mu.Unlock()
+
+					if !jsonOutput {
+						fmt.Printf("  Uploaded: %s\n", filename)
+					}
+				}(imageURL)
 			}
+			wg.Wait()
 		}
 
 		if jsonOutput {
@@ -241,8 +274,17 @@ Example:
 		extIDCol, hasExtID := colIdx["external_id"]
 		labelCol, hasLabel := colIdx["label"]
 
-		var results []map[string]interface{}
-		var errors []string
+		// Parse all rows first
+		type csvRow struct {
+			rowNum   int
+			imageURL string
+			filename string
+			extID    string
+			label    string
+		}
+
+		var rows []csvRow
+		var parseErrors []string
 		rowNum := 1
 
 		for {
@@ -251,7 +293,7 @@ Example:
 				break
 			}
 			if err != nil {
-				errors = append(errors, fmt.Sprintf("row %d: %v", rowNum+1, err))
+				parseErrors = append(parseErrors, fmt.Sprintf("row %d: %v", rowNum+1, err))
 				rowNum++
 				continue
 			}
@@ -259,59 +301,96 @@ Example:
 			rowNum++
 
 			if urlCol >= len(record) {
-				errors = append(errors, fmt.Sprintf("row %d: missing image_url column", rowNum))
+				parseErrors = append(parseErrors, fmt.Sprintf("row %d: missing image_url column", rowNum))
 				continue
 			}
 
 			imageURL := strings.TrimSpace(record[urlCol])
 			if imageURL == "" {
-				errors = append(errors, fmt.Sprintf("row %d: empty image_url", rowNum))
+				parseErrors = append(parseErrors, fmt.Sprintf("row %d: empty image_url", rowNum))
 				continue
 			}
 
 			if _, err := url.Parse(imageURL); err != nil {
-				errors = append(errors, fmt.Sprintf("row %d: invalid URL: %s", rowNum, imageURL))
+				parseErrors = append(parseErrors, fmt.Sprintf("row %d: invalid URL: %s", rowNum, imageURL))
 				continue
 			}
 
 			filename := imageURL
 			if parsedURL, err := url.Parse(imageURL); err == nil {
 				pathParts := strings.Split(parsedURL.Path, "/")
-				if len(pathParts) > 0 {
+				if len(pathParts) > 0 && pathParts[len(pathParts)-1] != "" {
 					filename = pathParts[len(pathParts)-1]
 				}
 			}
 
-			imageData := map[string]interface{}{
-				"project_id": cfg.ProjectID,
-				"user_id":    userID,
-				"filename":   filename,
-				"file_path":  imageURL,
-				"file_url":   imageURL,
-			}
-
+			row := csvRow{rowNum: rowNum, imageURL: imageURL, filename: filename}
 			if hasExtID && extIDCol < len(record) {
-				extID := strings.TrimSpace(record[extIDCol])
-				if extID != "" {
-					imageData["external_id"] = extID
-				}
+				row.extID = strings.TrimSpace(record[extIDCol])
 			}
-
 			if hasLabel && labelCol < len(record) {
-				label := strings.TrimSpace(record[labelCol])
-				if label != "" {
-					imageData["label"] = label
-				}
+				row.label = strings.TrimSpace(record[labelCol])
 			}
-
-			result, err := client.Post("dataset_images", imageData)
-			if err != nil {
-				errors = append(errors, fmt.Sprintf("row %d (%s): %v", rowNum, filename, err))
-				continue
-			}
-
-			results = append(results, result)
+			rows = append(rows, row)
 		}
+
+		// Upload in parallel (5 at a time)
+		var results []map[string]interface{}
+		var errors []string
+		var mu sync.Mutex
+		sem := make(chan struct{}, 5)
+		var wg sync.WaitGroup
+
+		errors = append(errors, parseErrors...)
+
+		for _, row := range rows {
+			wg.Add(1)
+			go func(r csvRow) {
+				defer wg.Done()
+				sem <- struct{}{}
+				defer func() { <-sem }()
+
+				uploadResult, err := storage.UploadFromURL(cfg, accessToken, "dataset-images", r.imageURL)
+				if err != nil {
+					mu.Lock()
+					errors = append(errors, fmt.Sprintf("row %d (%s): failed to upload: %v", r.rowNum, r.filename, err))
+					mu.Unlock()
+					return
+				}
+
+				imageData := map[string]interface{}{
+					"project_id": cfg.ProjectID,
+					"user_id":    userID,
+					"filename":   r.filename,
+					"file_path":  uploadResult.FilePath,
+					"file_url":   uploadResult.FileURL,
+				}
+
+				if r.extID != "" {
+					imageData["external_id"] = r.extID
+				}
+				if r.label != "" {
+					imageData["label"] = r.label
+				}
+
+				result, err := client.Post("dataset_images", imageData)
+				if err != nil {
+					mu.Lock()
+					errors = append(errors, fmt.Sprintf("row %d (%s): %v", r.rowNum, r.filename, err))
+					mu.Unlock()
+					return
+				}
+
+				mu.Lock()
+				results = append(results, result)
+				mu.Unlock()
+
+				if !jsonOutput {
+					fmt.Printf("  Imported: %s\n", r.filename)
+				}
+			}(row)
+		}
+		wg.Wait()
 
 		if jsonOutput {
 			return output.PrintJSON(map[string]interface{}{

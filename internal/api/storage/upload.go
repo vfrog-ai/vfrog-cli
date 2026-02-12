@@ -7,6 +7,7 @@ import (
 	"io"
 	"mime"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -17,9 +18,9 @@ import (
 
 // SignedURLResponse represents the response from the s3-storage-proxy edge function
 type SignedURLResponse struct {
-	SignedURL string `json:"signedUrl"`
-	FileKey  string `json:"fileKey"`
-	FileURL  string `json:"fileUrl"`
+	UploadURL string `json:"uploadUrl"`
+	FilePath  string `json:"filePath"`
+	FileURL   string `json:"fileUrl"`
 }
 
 // GetSignedUploadURL requests a signed upload URL from Supabase edge function
@@ -31,8 +32,9 @@ func GetSignedUploadURL(cfg *config.Config, accessToken, bucket, filename, conte
 	edgeFunctionURL := fmt.Sprintf("%s/functions/v1/s3-storage-proxy", cfg.SupabaseURL)
 
 	payload := map[string]interface{}{
-		"action":      "getSignedUploadUrl",
+		"action":      "sign-upload",
 		"bucket":      bucket,
+		"projectId":   cfg.ProjectID,
 		"filename":    filename,
 		"contentType": contentType,
 	}
@@ -99,11 +101,17 @@ func UploadToS3(signedURL string, data []byte, contentType string) error {
 	return nil
 }
 
-// UploadFile uploads a local file to S3 and returns the file URL
-func UploadFile(cfg *config.Config, accessToken, bucket, filePath string) (string, error) {
+// UploadResult contains both the full CDN URL and the relative path
+type UploadResult struct {
+	FileURL  string // full CDN URL (e.g. https://cdn.vfrog.ai/dataset-images/userId/projId/file.jpg)
+	FilePath string // relative path (e.g. userId/projId/file.jpg)
+}
+
+// UploadFile uploads a local file to S3 and returns the upload result
+func UploadFile(cfg *config.Config, accessToken, bucket, filePath string) (*UploadResult, error) {
 	data, err := os.ReadFile(filePath)
 	if err != nil {
-		return "", fmt.Errorf("failed to read file: %w", err)
+		return nil, fmt.Errorf("failed to read file: %w", err)
 	}
 
 	filename := filepath.Base(filePath)
@@ -111,14 +119,59 @@ func UploadFile(cfg *config.Config, accessToken, bucket, filePath string) (strin
 
 	signedResp, err := GetSignedUploadURL(cfg, accessToken, bucket, filename, contentType)
 	if err != nil {
-		return "", fmt.Errorf("failed to get signed URL: %w", err)
+		return nil, fmt.Errorf("failed to get signed URL: %w", err)
 	}
 
-	if err := UploadToS3(signedResp.SignedURL, data, contentType); err != nil {
-		return "", fmt.Errorf("failed to upload to S3: %w", err)
+	if err := UploadToS3(signedResp.UploadURL, data, contentType); err != nil {
+		return nil, fmt.Errorf("failed to upload to S3: %w", err)
 	}
 
-	return signedResp.FileURL, nil
+	return &UploadResult{FileURL: signedResp.FileURL, FilePath: signedResp.FilePath}, nil
+}
+
+// UploadFromURL downloads an image from an external URL and re-uploads it to S3
+func UploadFromURL(cfg *config.Config, accessToken, bucket, imageURL string) (*UploadResult, error) {
+	client := &http.Client{Timeout: 2 * time.Minute}
+	resp, err := client.Get(imageURL)
+	if err != nil {
+		return nil, fmt.Errorf("failed to download image: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return nil, fmt.Errorf("failed to download image (status %d)", resp.StatusCode)
+	}
+
+	data, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read image data: %w", err)
+	}
+
+	// Extract filename from URL path
+	filename := "image.jpg"
+	if parsed, err := url.Parse(imageURL); err == nil {
+		parts := strings.Split(parsed.Path, "/")
+		if len(parts) > 0 && parts[len(parts)-1] != "" {
+			filename = parts[len(parts)-1]
+		}
+	}
+
+	// Detect content type from response header, fall back to filename
+	contentType := resp.Header.Get("Content-Type")
+	if contentType == "" || contentType == "application/octet-stream" || contentType == "binary/octet-stream" {
+		contentType = DetectContentType(filename)
+	}
+
+	signedResp, err := GetSignedUploadURL(cfg, accessToken, bucket, filename, contentType)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get signed URL: %w", err)
+	}
+
+	if err := UploadToS3(signedResp.UploadURL, data, contentType); err != nil {
+		return nil, fmt.Errorf("failed to upload to S3: %w", err)
+	}
+
+	return &UploadResult{FileURL: signedResp.FileURL, FilePath: signedResp.FilePath}, nil
 }
 
 // DetectContentType detects MIME type from filename

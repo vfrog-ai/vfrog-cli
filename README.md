@@ -119,7 +119,12 @@ vfrog iterations create <object_id>
 vfrog iterations ssat --iteration_number 1
 vfrog iterations status --iteration_number 1 --watch
 
-# 4. Export results
+# 4. Train and deploy
+vfrog iterations train --iteration_number 1
+vfrog iterations status --iteration_number 1 --watch
+vfrog iterations deploy --iteration_number 1
+
+# 5. Export results
 vfrog export yolo --iteration_id <id> --output ./my-dataset
 ```
 
@@ -187,7 +192,7 @@ Dataset images are the images your model will learn to search through. There are
 vfrog dataset_images upload https://example.com/image1.jpg https://example.com/image2.jpg
 ```
 
-> URLs must be persistent and publicly accessible. Images are referenced by URL, not stored on vfrog servers.
+> Images are downloaded from the provided URLs and re-uploaded to vfrog's CDN, so the original URLs do not need to remain accessible after upload.
 
 #### From Local Files
 
@@ -235,7 +240,7 @@ Objects are the product/reference images your model learns to detect:
 vfrog objects create https://example.com/product.jpg --label "Sneaker" --external_id "SKU123"
 
 # Create from local file
-vfrog objects create --file ./product.jpg --label "Sneaker"
+vfrog objects create --file ./product.jpg --label "Sneaker" --external_id "123"
 
 # List objects in the active project
 vfrog objects list
@@ -285,13 +290,18 @@ vfrog iterations ssat --iteration_id <id> --random 100
 
 # Restart an iteration and immediately run SSAT
 vfrog iterations ssat --iteration_id <id> --restart
+
+# Specify industry directly (skips automatic control check)
+vfrog iterations ssat --iteration_id <id> --industry Retail
 ```
 
 **How it works:**
-- **Iteration 1:** Uses the annotator pipeline (cutout extraction + LLM matching)
+- **Iteration 1:** Runs a control check to detect the project's industry via LLM, then uses the annotator pipeline (cutout extraction + matching). You can skip the control check by providing `--industry` directly.
 - **Iteration 2+:** Uses inference with the trained model from the previous iteration
 
 All linked dataset images are processed by default. Use `--random N` to sample from the full project dataset instead.
+
+**Supported industries:** Retail, Agriculture, Aquaculture, Fisheries, Manufacturing, Mechanical Engineering, PPE
 
 #### Monitor Progress
 
@@ -323,20 +333,7 @@ Open the HALO (Human Assisted Labelling of Objects) web UI to review and correct
 vfrog iterations halo --iteration_id <id>
 ```
 
-#### Manage Iterations
 
-```bash
-# Create the next iteration from the current one
-vfrog iterations next --iteration_id <id>
-
-# Restart an iteration (delete and recreate)
-vfrog iterations restart --iteration_id <id>
-
-# Delete an iteration
-vfrog iterations delete --iteration_id <id>
-```
-
-> You can use `--iteration_number` and `--object_id` instead of `--iteration_id` for any iteration command.
 
 ### Step 7: Review Annotations
 
@@ -375,9 +372,44 @@ vfrog iterations status --iteration_id <id> --watch
 ```
 
 Once training completes, you can:
+- Deploy the model to production: `vfrog iterations deploy --iteration_id <id>`
 - Create the next iteration: `vfrog iterations next --iteration_id <id>`
 - Run inference with the trained model
 - Export the annotated dataset
+
+### Step 8b: Deploy to Production
+
+After training completes, deploy the model to make it available for API inference:
+
+```bash
+# Deploy by iteration ID
+vfrog iterations deploy --iteration_id <id>
+
+# Deploy by iteration number
+vfrog iterations deploy --iteration_number 1
+```
+
+**What it does:**
+1. Verifies the iteration has `trained_status: completed` and a valid model
+2. Creates a **class** record linking the model to your project
+3. Creates a **model-class mapping** for API routing
+4. Updates the iteration's `trained_status` to `validated`
+
+After deployment, the model is available for inference via your API key.
+#### Manage Iterations
+
+```bash
+# Create the next iteration from the current one
+vfrog iterations next --iteration_id <id>
+
+# Restart an iteration (delete and recreate)
+vfrog iterations restart --iteration_id <id>
+
+# Delete an iteration
+vfrog iterations delete --iteration_id <id>
+```
+
+> You can use `--iteration_number` and `--object_id` instead of `--iteration_id` for any iteration command.
 
 ### Step 9: Run CV Inference
 
@@ -504,6 +536,7 @@ The JSON file contains full annotation arrays with bounding box coordinates, dat
 | `vfrog iterations annotations` | View iteration annotations |
 | `vfrog iterations control` | Submit SSAT control feedback |
 | `vfrog iterations train` | Train a model |
+| `vfrog iterations deploy` | Deploy trained model to production |
 | `vfrog iterations halo` | Get HALO review URL |
 | `vfrog iterations next` | Create next iteration |
 | `vfrog iterations restart` | Restart an iteration |
@@ -617,6 +650,9 @@ vfrog iterations status --iteration_number 1 --watch
 vfrog iterations train --iteration_number 1
 vfrog iterations status --iteration_number 1 --watch
 
+# Deploy to production
+vfrog iterations deploy --iteration_number 1
+
 # Export results
 vfrog export yolo --iteration_id $(vfrog iterations list --json | jq -r '.[0].id') --output ./dataset --zip
 ```
@@ -691,7 +727,7 @@ vfrog-cli/
 │   ├── projects.go        # Project CRUD (list, create, delete)
 │   ├── dataset_images.go  # Dataset image management (upload, import, list, delete)
 │   ├── objects.go         # Object/product image management
-│   ├── iterations.go      # SSAT workflow (ssat, train, status, annotations, control, halo)
+│   ├── iterations.go      # SSAT workflow (ssat, train, deploy, status, annotations, control, halo)
 │   ├── inference.go       # CV inference (single, batch, status, feedback)
 │   └── export.go          # Data export (YOLO, JSON)
 ├── internal/
@@ -704,6 +740,7 @@ vfrog-cli/
 │   └── output/            # Table and JSON output formatting
 ├── Makefile               # Build targets for all environments
 ├── .github/workflows/
+│   ├── ci.yml             # Continuous integration checks
 │   └── release.yml        # CI/CD for building and releasing binaries
 └── main.go
 ```

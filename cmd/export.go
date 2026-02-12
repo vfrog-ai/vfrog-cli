@@ -98,10 +98,10 @@ Example:
 			}
 		}
 
-		// Get annotated images
+		// Get annotated images with joined dataset image info
 		annotatedImages, err := client.Get("project_iteration_annotated_images", map[string]string{
 			"project_iteration_id": fmt.Sprintf("eq.%s", iterationID),
-			"select":               "id,dataset_images_id,annotation",
+			"select":               "id,project_iteration_dataset_image_id,annotation,project_iteration_dataset_images(dataset_image_id)",
 		})
 		if err != nil {
 			return fmt.Errorf("failed to get annotated images: %w", err)
@@ -111,10 +111,16 @@ Example:
 			return fmt.Errorf("no annotated images found for this iteration")
 		}
 
-		// Get dataset image URLs
+		// Resolve the real dataset_image_id via the join table
 		dsImageIDs := make([]string, 0, len(annotatedImages))
 		for _, ai := range annotatedImages {
-			if dsID, ok := ai["dataset_images_id"].(string); ok {
+			dsID := ""
+			if pidsiData, ok := ai["project_iteration_dataset_images"].(map[string]interface{}); ok {
+				if id, ok := pidsiData["dataset_image_id"].(string); ok {
+					dsID = id
+				}
+			}
+			if dsID != "" {
 				dsImageIDs = append(dsImageIDs, dsID)
 			}
 		}
@@ -150,8 +156,13 @@ Example:
 		httpClient := &http.Client{Timeout: 30 * time.Second}
 
 		for _, ai := range annotatedImages {
-			dsID, ok := ai["dataset_images_id"].(string)
-			if !ok {
+			dsID := ""
+			if pidsiData, ok := ai["project_iteration_dataset_images"].(map[string]interface{}); ok {
+				if id, ok := pidsiData["dataset_image_id"].(string); ok {
+					dsID = id
+				}
+			}
+			if dsID == "" {
 				continue
 			}
 
@@ -336,7 +347,7 @@ Example:
 		// Get annotated images with full annotation data
 		annotatedImages, err := client.Get("project_iteration_annotated_images", map[string]string{
 			"project_iteration_id": fmt.Sprintf("eq.%s", iterationID),
-			"select":               "id,dataset_images_id,annotation,created_at",
+			"select":               "id,project_iteration_dataset_image_id,annotation,created_at,project_iteration_dataset_images(dataset_image_id)",
 		})
 		if err != nil {
 			return fmt.Errorf("failed to get annotated images: %w", err)
@@ -346,10 +357,15 @@ Example:
 			return fmt.Errorf("no annotated images found for this iteration")
 		}
 
-		// Enrich with dataset image info
+		// Enrich with dataset image info via the join table
 		for i, ai := range annotatedImages {
-			dsID, ok := ai["dataset_images_id"].(string)
-			if !ok {
+			dsID := ""
+			if pidsiData, ok := ai["project_iteration_dataset_images"].(map[string]interface{}); ok {
+				if id, ok := pidsiData["dataset_image_id"].(string); ok {
+					dsID = id
+				}
+			}
+			if dsID == "" {
 				continue
 			}
 

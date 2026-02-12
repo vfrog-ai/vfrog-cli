@@ -62,6 +62,7 @@ Examples:
 		}
 
 		var imageURL string
+		var imageFilePath string
 		var filename string
 
 		if filePath != "" {
@@ -70,12 +71,13 @@ Examples:
 				return fmt.Errorf("file not found: %s", filePath)
 			}
 
-			fileURL, err := storage.UploadFile(cfg, accessToken, "product-images", filePath)
+			uploadResult, err := storage.UploadFile(cfg, accessToken, "product-images", filePath)
 			if err != nil {
 				return fmt.Errorf("failed to upload file: %w", err)
 			}
 
-			imageURL = fileURL
+			imageURL = uploadResult.FileURL
+			imageFilePath = uploadResult.FilePath
 			filename = filepath.Base(filePath)
 		} else if len(args) == 1 {
 			imageURL = args[0]
@@ -90,6 +92,7 @@ Examples:
 					filename = pathParts[len(pathParts)-1]
 				}
 			}
+			imageFilePath = imageURL
 		} else {
 			return fmt.Errorf("provide a URL as argument or use --file for local file upload")
 		}
@@ -100,7 +103,7 @@ Examples:
 			"project_id": cfg.ProjectID,
 			"user_id":    userID,
 			"filename":   filename,
-			"file_path":  imageURL,
+			"file_path":  imageFilePath,
 			"file_url":   imageURL,
 			"file_size":  0,
 			"mime_type":  mimeType,

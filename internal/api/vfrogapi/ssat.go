@@ -55,6 +55,8 @@ type DatasetImageRef struct {
 // BatchSubmitParams represents the parameters for SSAT batch submission
 type BatchSubmitParams struct {
 	ProjectIterationID string            `json:"project_iteration_id"`
+	OrganisationID     string            `json:"organisation_id,omitempty"`
+	Industry           string            `json:"industry,omitempty"`
 	ProductImage       ProductImageRef   `json:"product_image"`
 	DatasetImages      []DatasetImageRef `json:"dataset_images"`
 	CallbackURL        string            `json:"callback_url,omitempty"`
@@ -109,7 +111,7 @@ type InferenceImageRef struct {
 
 // AnnotatedImageRef represents an annotated image for inference
 type AnnotatedImageRef struct {
-	DatasetImagesID string        `json:"dataset_images_id"`
+	DatasetImagesID string        `json:"project_iteration_dataset_image_id"`
 	Annotation      []interface{} `json:"annotation"`
 }
 
@@ -258,11 +260,17 @@ func (c *SSATClient) NextIteration(params NextIterationParams) (map[string]inter
 	return result, nil
 }
 
+// ControlImageRef represents a dataset image for control (uses image_url, not file_url)
+type ControlImageRef struct {
+	ID       string `json:"id"`
+	ImageURL string `json:"image_url"`
+}
+
 // ControlParams represents the parameters for SSAT control
 type ControlParams struct {
-	ProjectIterationID string              `json:"project_iteration_id"`
-	DatasetImages      []InferenceImageRef `json:"dataset_images"`
-	OrganisationID     string              `json:"organisation_id"`
+	ProjectIterationID string            `json:"project_iteration_id"`
+	DatasetImages      []ControlImageRef `json:"dataset_images"`
+	OrganisationID     string            `json:"organisation_id"`
 }
 
 // Control submits SSAT control feedback via the API project
@@ -299,7 +307,7 @@ func (c *SSATClient) Control(params ControlParams) (map[string]interface{}, erro
 
 	var result map[string]interface{}
 	if err := json.Unmarshal(body, &result); err != nil {
-		return map[string]interface{}{}, nil
+		return nil, fmt.Errorf("failed to parse control response: %w (body: %s)", err, string(body))
 	}
 
 	return result, nil
