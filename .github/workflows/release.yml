@@ -36,9 +36,9 @@ jobs:
             supabase_url_secret: 'dev-supabase-url'
             supabase_key_secret: 'dev-supabase-publishable-key'
           - env: staging
-            gcp_project: staging-vfrog
-            workload_identity_provider: projects/123456789/locations/global/workloadIdentityPools/staging-github-pool/providers/github-provider
-            service_account: staging-github-deployer@staging-vfrog.iam.gserviceaccount.com
+            gcp_project: staging-481611
+            workload_identity_provider: projects/743339230970/locations/global/workloadIdentityPools/staging-github-pool/providers/github-provider
+            service_account: staging-github-deployer@staging-481611.iam.gserviceaccount.com
             binary_suffix: '-staging'
             api_url: 'https://api-staging.vfrog.ai'
             inference_url: 'https://inference-staging.vfrog.ai'
@@ -48,17 +48,17 @@ jobs:
             supabase_url_secret: 'staging-supabase-url'
             supabase_key_secret: 'staging-supabase-publishable-key'
           - env: production
-            gcp_project: production-vfrog
-            workload_identity_provider: projects/987654321/locations/global/workloadIdentityPools/prod-github-pool/providers/github-provider
-            service_account: prod-github-deployer@production-vfrog.iam.gserviceaccount.com
+            gcp_project: production-481611-d7
+            workload_identity_provider: projects/1089539564918/locations/global/workloadIdentityPools/prod-github-pool/providers/github-provider
+            service_account: production-github-deployer@production-481611-d7.iam.gserviceaccount.com 
             binary_suffix: ''
             api_url: 'https://api.vfrog.ai'
             inference_url: 'https://inference.vfrog.ai'
             annotator_url: 'https://annotator.vfrog.ai'
             api_project_base_url: 'https://api.vfrog.ai'
             platform_host: 'https://platform.vfrog.ai'
-            supabase_url_secret: 'prod-supabase-url'
-            supabase_key_secret: 'prod-supabase-publishable-key'
+            supabase_url_secret: 'production-supabase-url'
+            supabase_key_secret: 'production-supabase-publishable-key'
 
     steps:
       - name: Checkout code
