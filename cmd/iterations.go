@@ -1,12 +1,14 @@
 package cmd
 
 import (
+	"errors"
 	"fmt"
 	"math/rand"
 	"time"
 
 	"github.com/spf13/cobra"
 
+	"github.com/vfrog/vfrog-cli/internal/api/credits"
 	"github.com/vfrog/vfrog-cli/internal/api/supabase"
 	"github.com/vfrog/vfrog-cli/internal/api/vfrogapi"
 	"github.com/vfrog/vfrog-cli/internal/auth"
@@ -383,6 +385,73 @@ The iteration must be in 'created' status to start SSAT.`,
 			datasetImageLinks = linkedImages
 		}
 
+		// Reserve credits before processing
+		creditsClient, err := credits.NewClient(cfg)
+		if err != nil {
+			return fmt.Errorf("failed to create credits client: %w", err)
+		}
+
+		imageCount := len(datasetImageLinks)
+		var toolType string
+		var processID string
+		if iterationNumber >= 2 {
+			toolType = "run_inference"
+			processID = fmt.Sprintf("run_inference_%s", iterationID)
+		} else {
+			toolType = "ssat"
+			processID = fmt.Sprintf("ssat_%s", iterationID)
+		}
+
+		// Pre-check usage (validates billing, subscription, and balance)
+		usage, err := creditsClient.GetUsage(credits.GetUsageParams{
+			OrganisationID: cfg.OrganisationID,
+			ActionType:     toolType,
+			Units:          imageCount,
+		})
+		if err != nil {
+			return fmt.Errorf("failed to check usage: %w", err)
+		}
+		if !usage.Allowed {
+			if usage.Reason != "" {
+				return fmt.Errorf("cannot proceed: %s. Estimated cost: %.2f credits (%d images). Current balance: %.2f credits",
+					usage.Reason, usage.EstimatedActionCost, imageCount, usage.CreditsBalance)
+			}
+			return fmt.Errorf("cannot proceed: usage not allowed. Current balance: %.2f credits", usage.CreditsBalance)
+		}
+
+		if !jsonOutput {
+			fmt.Printf("Estimated cost: %.2f credits (%d images x %.2f per image). Balance: %.2f credits\n",
+				usage.EstimatedActionCost, imageCount, usage.PricePerUnit, usage.CreditsBalance)
+		}
+
+		// Reserve credits
+		reservation, err := creditsClient.ReserveCredits(credits.ReserveParams{
+			OrganisationID: cfg.OrganisationID,
+			ToolType:       toolType,
+			ProcessID:      processID,
+			Units:          imageCount,
+		})
+		if err != nil {
+			if errors.Is(err, credits.ErrInsufficientCredits) {
+				return fmt.Errorf("insufficient credits. Estimated cost: %.2f credits (%d images x %.2f per image). Current balance: %.2f credits",
+					usage.EstimatedActionCost, imageCount, usage.PricePerUnit, usage.CreditsBalance)
+			}
+			return fmt.Errorf("failed to reserve credits: %w", err)
+		}
+
+		if !jsonOutput {
+			fmt.Printf("Credits reserved: %.2f (reservation: %s)\n", reservation.Amount, reservation.ReservationID)
+		}
+
+		// Save credit reservation ID to iteration
+		if err := client.Patch("project_iteration", iterationID, map[string]interface{}{
+			"credit_reservation_id": reservation.ReservationID,
+		}); err != nil {
+			if !jsonOutput {
+				fmt.Fprintf(cmd.ErrOrStderr(), "Warning: failed to save credit reservation ID: %v\n", err)
+			}
+		}
+
 		// Check if we have a model (iteration 2+)
 		var modelID string
 		if iter["model_id"] != nil {
@@ -589,6 +658,64 @@ var iterationTrainCmd = &cobra.Command{
 		callbackURL := ""
 		if cfg.APIProjectBaseURL != "" {
 			callbackURL = fmt.Sprintf("%s/api/v1/callback/project-status-update", cfg.APIProjectBaseURL)
+		}
+
+		// Reserve credits before training
+		creditsClient, err := credits.NewClient(cfg)
+		if err != nil {
+			return fmt.Errorf("failed to create credits client: %w", err)
+		}
+
+		trainImageCount := len(annotatedImages)
+
+		// Pre-check usage (validates billing, subscription, and balance)
+		usage, err := creditsClient.GetUsage(credits.GetUsageParams{
+			OrganisationID: cfg.OrganisationID,
+			ActionType:     "training",
+			Units:          trainImageCount,
+		})
+		if err != nil {
+			return fmt.Errorf("failed to check usage: %w", err)
+		}
+		if !usage.Allowed {
+			if usage.Reason != "" {
+				return fmt.Errorf("cannot proceed: %s. Estimated cost: %.2f credits (%d images). Current balance: %.2f credits",
+					usage.Reason, usage.EstimatedActionCost, trainImageCount, usage.CreditsBalance)
+			}
+			return fmt.Errorf("cannot proceed: usage not allowed. Current balance: %.2f credits", usage.CreditsBalance)
+		}
+
+		if !jsonOutput {
+			fmt.Printf("Estimated cost: %.2f credits (%d images x %.2f per image). Balance: %.2f credits\n",
+				usage.EstimatedActionCost, trainImageCount, usage.PricePerUnit, usage.CreditsBalance)
+		}
+
+		// Reserve credits
+		reservation, err := creditsClient.ReserveCredits(credits.ReserveParams{
+			OrganisationID: cfg.OrganisationID,
+			ToolType:       "training",
+			ProcessID:      fmt.Sprintf("training_%s", iterationID),
+			Units:          trainImageCount,
+		})
+		if err != nil {
+			if errors.Is(err, credits.ErrInsufficientCredits) {
+				return fmt.Errorf("insufficient credits. Estimated cost: %.2f credits (%d images x %.2f per image). Current balance: %.2f credits",
+					usage.EstimatedActionCost, trainImageCount, usage.PricePerUnit, usage.CreditsBalance)
+			}
+			return fmt.Errorf("failed to reserve credits: %w", err)
+		}
+
+		if !jsonOutput {
+			fmt.Printf("Credits reserved: %.2f (reservation: %s)\n", reservation.Amount, reservation.ReservationID)
+		}
+
+		// Save credit reservation ID to iteration
+		if err := client.Patch("project_iteration", iterationID, map[string]interface{}{
+			"credit_reservation_id": reservation.ReservationID,
+		}); err != nil {
+			if !jsonOutput {
+				fmt.Fprintf(cmd.ErrOrStderr(), "Warning: failed to save credit reservation ID: %v\n", err)
+			}
 		}
 
 		// Get access token (requires login)

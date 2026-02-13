@@ -109,9 +109,9 @@ type InferenceImageRef struct {
 	FileURL string `json:"file_url"`
 }
 
-// AnnotatedImageRef represents an annotated image for inference
+// AnnotatedImageRef represents an annotated image for training/inference
 type AnnotatedImageRef struct {
-	DatasetImagesID string        `json:"project_iteration_dataset_image_id"`
+	DatasetImagesID string        `json:"dataset_images_id"`
 	Annotation      []interface{} `json:"annotation"`
 }
 

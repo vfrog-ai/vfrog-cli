@@ -44,10 +44,6 @@ chmod +x vfrog && sudo mv vfrog /usr/local/bin/
 # Linux (AMD64)
 curl -L https://github.com/vfrog/vfrog-cli/releases/latest/download/vfrog-linux-amd64 -o vfrog
 chmod +x vfrog && sudo mv vfrog /usr/local/bin/
-
-# Windows (AMD64) - Run in PowerShell
-Invoke-WebRequest -Uri https://github.com/vfrog/vfrog-cli/releases/latest/download/vfrog-windows-amd64.exe -OutFile vfrog.exe
-Move-Item vfrog.exe $env:USERPROFILE\AppData\Local\Microsoft\WindowsApps\
 ```
 
 **Staging environment:**
@@ -56,10 +52,6 @@ Move-Item vfrog.exe $env:USERPROFILE\AppData\Local\Microsoft\WindowsApps\
 # macOS (Apple Silicon)
 curl -L https://github.com/vfrog/vfrog-cli/releases/latest/download/vfrog-staging-darwin-arm64 -o vfrog-staging
 chmod +x vfrog-staging && sudo mv vfrog-staging /usr/local/bin/
-
-# Windows (AMD64)
-Invoke-WebRequest -Uri https://github.com/vfrog/vfrog-cli/releases/latest/download/vfrog-staging-windows-amd64.exe -OutFile vfrog-staging.exe
-Move-Item vfrog-staging.exe $env:USERPROFILE\AppData\Local\Microsoft\WindowsApps\
 ```
 
 **Development environment:**
@@ -68,10 +60,6 @@ Move-Item vfrog-staging.exe $env:USERPROFILE\AppData\Local\Microsoft\WindowsApps
 # macOS (Apple Silicon)
 curl -L https://github.com/vfrog/vfrog-cli/releases/latest/download/vfrog-dev-darwin-arm64 -o vfrog-dev
 chmod +x vfrog-dev && sudo mv vfrog-dev /usr/local/bin/
-
-# Windows (AMD64)
-Invoke-WebRequest -Uri https://github.com/vfrog/vfrog-cli/releases/latest/download/vfrog-dev-windows-amd64.exe -OutFile vfrog-dev.exe
-Move-Item vfrog-dev.exe $env:USERPROFILE\AppData\Local\Microsoft\WindowsApps\
 ```
 
 ### Verify Installation
@@ -79,12 +67,6 @@ Move-Item vfrog-dev.exe $env:USERPROFILE\AppData\Local\Microsoft\WindowsApps\
 ```bash
 vfrog version
 vfrog --help
-```
-
-On Windows (PowerShell):
-```powershell
-.\vfrog.exe version
-.\vfrog.exe --help
 ```
 
 ### Available Binaries
@@ -671,6 +653,25 @@ STATUS=$(vfrog iterations status --iteration_id $ITER_ID --json | jq -r '.status
 
 ## Development
 
+### Prerequisites
+
+Install Go 1.22 or later:
+
+```bash
+# macOS (Homebrew)
+brew install go
+
+# Linux (Ubuntu/Debian)
+sudo apt update && sudo apt install -y golang-go
+```
+
+**Windows:** Download and run the MSI installer from [go.dev/dl](https://go.dev/dl/). The installer adds Go to your PATH automatically.
+
+Verify your installation:
+```bash
+go version   # should show go1.22 or later
+```
+
 ### Building from Source
 
 ```bash
@@ -679,25 +680,42 @@ cd vfrog-cli
 go build -o vfrog ./main.go
 ```
 
-On Windows:
+On Windows (PowerShell):
 ```powershell
+git clone https://github.com/vfrog/vfrog-cli.git
+cd vfrog-cli
 go build -o vfrog.exe ./main.go
 ```
 
-### Building with Environment Credentials
+### Building with Make
+
+The Makefile provides targets for each environment. Credentials are baked into the binary at build time.
 
 ```bash
-# Dev (fetches credentials from GCP Secret Manager)
+# Dev — fetches credentials from GCP Secret Manager
 make build-dev-gcp
 
-# Staging
+# Staging — pass credentials manually
 make build-staging STAGING_SUPABASE_URL="..." STAGING_SUPABASE_KEY="..."
 
-# Production
+# Production — pass credentials manually
 make build-prod PROD_SUPABASE_URL="..." PROD_SUPABASE_KEY="..."
 
-# Local development (connects to localhost services)
+# Local development — connects to localhost services, fetches credentials from GCP
 make build-local-gcp
+```
+
+You can also build without credentials (uses defaults):
+```bash
+make build          # plain build, no environment credentials
+make build-dev      # dev binary with env vars (set DEV_SUPABASE_URL, DEV_SUPABASE_KEY)
+```
+
+Other useful targets:
+```bash
+make watch          # rebuild on file changes (requires watchexec)
+make install        # build dev binary and install to /usr/local/bin
+make clean          # remove build artifacts
 ```
 
 ### Building with Custom Credentials
