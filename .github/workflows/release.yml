@@ -49,7 +49,7 @@ jobs:
             supabase_key_secret: 'staging-supabase-publishable-key'
           - env: production
             gcp_project: production-481611-d7
-            workload_identity_provider: projects/1089539564918/locations/global/workloadIdentityPools/prod-github-pool/providers/github-provider
+            workload_identity_provider: projects/1089539564918/locations/global/workloadIdentityPools/production-github-pool/providers/github-provider
             service_account: production-github-deployer@production-481611-d7.iam.gserviceaccount.com 
             binary_suffix: ''
             api_url: 'https://api.vfrog.ai'
