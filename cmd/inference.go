@@ -6,9 +6,9 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/vfrog/vfrog-cli/internal/api/vfrogapi"
-	"github.com/vfrog/vfrog-cli/internal/config"
-	"github.com/vfrog/vfrog-cli/internal/output"
+	"github.com/vfrog-ai/vfrog-cli/internal/api/vfrogapi"
+	"github.com/vfrog-ai/vfrog-cli/internal/config"
+	"github.com/vfrog-ai/vfrog-cli/internal/output"
 )
 
 var (

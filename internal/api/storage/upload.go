@@ -13,7 +13,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/vfrog/vfrog-cli/internal/config"
+	"github.com/vfrog-ai/vfrog-cli/internal/config"
 )
 
 // SignedURLResponse represents the response from the s3-storage-proxy edge function

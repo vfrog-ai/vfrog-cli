@@ -1,4 +1,4 @@
-module github.com/vfrog/vfrog-cli
+module github.com/vfrog-ai/vfrog-cli
 
 go 1.22.5
 

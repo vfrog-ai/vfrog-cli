@@ -21,6 +21,10 @@ var (
 	DefaultAPIProjectBaseURL = ""
 	// DefaultPlatformHost is set at build time for each environment binary
 	DefaultPlatformHost = ""
+	// DefaultInferenceURL is set at build time for each environment binary
+	DefaultInferenceURL = ""
+	// DefaultAnnotatorURL is set at build time for each environment binary
+	DefaultAnnotatorURL = ""
 	// Environment name (dev, staging, production) - set at build time
 	Environment = ""
 	// Version is set at build time (e.g., v0.1.0)

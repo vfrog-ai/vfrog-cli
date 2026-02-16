@@ -7,9 +7,9 @@ import (
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
 
-	"github.com/vfrog/vfrog-cli/internal/auth"
-	"github.com/vfrog/vfrog-cli/internal/config"
-	"github.com/vfrog/vfrog-cli/internal/output"
+	"github.com/vfrog-ai/vfrog-cli/internal/auth"
+	"github.com/vfrog-ai/vfrog-cli/internal/config"
+	"github.com/vfrog-ai/vfrog-cli/internal/output"
 )
 
 var (

@@ -105,15 +105,15 @@ jobs:
           VERSION="${{ steps.version.outputs.version }}"
           export CGO_ENABLED=0
           LDFLAGS="-s -w"
-          LDFLAGS="${LDFLAGS} -X 'github.com/vfrog/vfrog-cli/internal/config.Version=${VERSION}'"
-          LDFLAGS="${LDFLAGS} -X 'github.com/vfrog/vfrog-cli/internal/config.Environment=${{ matrix.env }}'"
-          LDFLAGS="${LDFLAGS} -X 'github.com/vfrog/vfrog-cli/internal/config.DefaultSupabaseURL=${SUPABASE_URL}'"
-          LDFLAGS="${LDFLAGS} -X 'github.com/vfrog/vfrog-cli/internal/config.DefaultSupabasePublishableKey=${SUPABASE_KEY}'"
-          LDFLAGS="${LDFLAGS} -X 'github.com/vfrog/vfrog-cli/internal/config.DefaultAPIURL=${{ matrix.api_url }}'"
-          LDFLAGS="${LDFLAGS} -X 'github.com/vfrog/vfrog-cli/internal/config.DefaultInferenceURL=${{ matrix.inference_url }}'"
-          LDFLAGS="${LDFLAGS} -X 'github.com/vfrog/vfrog-cli/internal/config.DefaultAnnotatorURL=${{ matrix.annotator_url }}'"
-          LDFLAGS="${LDFLAGS} -X 'github.com/vfrog/vfrog-cli/internal/config.DefaultAPIProjectBaseURL=${{ matrix.api_project_base_url }}'"
-          LDFLAGS="${LDFLAGS} -X 'github.com/vfrog/vfrog-cli/internal/config.DefaultPlatformHost=${{ matrix.platform_host }}'"
+          LDFLAGS="${LDFLAGS} -X 'github.com/vfrog-ai/vfrog-cli/internal/config.Version=${VERSION}'"
+          LDFLAGS="${LDFLAGS} -X 'github.com/vfrog-ai/vfrog-cli/internal/config.Environment=${{ matrix.env }}'"
+          LDFLAGS="${LDFLAGS} -X 'github.com/vfrog-ai/vfrog-cli/internal/config.DefaultSupabaseURL=${SUPABASE_URL}'"
+          LDFLAGS="${LDFLAGS} -X 'github.com/vfrog-ai/vfrog-cli/internal/config.DefaultSupabasePublishableKey=${SUPABASE_KEY}'"
+          LDFLAGS="${LDFLAGS} -X 'github.com/vfrog-ai/vfrog-cli/internal/config.DefaultAPIURL=${{ matrix.api_url }}'"
+          LDFLAGS="${LDFLAGS} -X 'github.com/vfrog-ai/vfrog-cli/internal/config.DefaultInferenceURL=${{ matrix.inference_url }}'"
+          LDFLAGS="${LDFLAGS} -X 'github.com/vfrog-ai/vfrog-cli/internal/config.DefaultAnnotatorURL=${{ matrix.annotator_url }}'"
+          LDFLAGS="${LDFLAGS} -X 'github.com/vfrog-ai/vfrog-cli/internal/config.DefaultAPIProjectBaseURL=${{ matrix.api_project_base_url }}'"
+          LDFLAGS="${LDFLAGS} -X 'github.com/vfrog-ai/vfrog-cli/internal/config.DefaultPlatformHost=${{ matrix.platform_host }}'"
 
           mkdir -p dist
 
@@ -188,29 +188,29 @@ jobs:
             **Production (recommended for most users):**
             ```bash
             # macOS (Apple Silicon)
-            curl -L https://github.com/vfrog/vfrog-cli/releases/download/${{ steps.version.outputs.version }}/vfrog-darwin-arm64 -o vfrog
+            curl -L https://github.com/vfrog-ai/vfrog-cli/releases/download/${{ steps.version.outputs.version }}/vfrog-darwin-arm64 -o vfrog
             chmod +x vfrog && sudo mv vfrog /usr/local/bin/
 
             # macOS (Intel)
-            curl -L https://github.com/vfrog/vfrog-cli/releases/download/${{ steps.version.outputs.version }}/vfrog-darwin-amd64 -o vfrog
+            curl -L https://github.com/vfrog-ai/vfrog-cli/releases/download/${{ steps.version.outputs.version }}/vfrog-darwin-amd64 -o vfrog
             chmod +x vfrog && sudo mv vfrog /usr/local/bin/
 
             # Linux (AMD64)
-            curl -L https://github.com/vfrog/vfrog-cli/releases/download/${{ steps.version.outputs.version }}/vfrog-linux-amd64 -o vfrog
+            curl -L https://github.com/vfrog-ai/vfrog-cli/releases/download/${{ steps.version.outputs.version }}/vfrog-linux-amd64 -o vfrog
             chmod +x vfrog && sudo mv vfrog /usr/local/bin/
             ```
 
             **Development environment:**
             ```bash
             # macOS (Apple Silicon)
-            curl -L https://github.com/vfrog/vfrog-cli/releases/download/${{ steps.version.outputs.version }}/vfrog-dev-darwin-arm64 -o vfrog-dev
+            curl -L https://github.com/vfrog-ai/vfrog-cli/releases/download/${{ steps.version.outputs.version }}/vfrog-dev-darwin-arm64 -o vfrog-dev
             chmod +x vfrog-dev && sudo mv vfrog-dev /usr/local/bin/
             ```
 
             **Staging environment:**
             ```bash
             # macOS (Apple Silicon)
-            curl -L https://github.com/vfrog/vfrog-cli/releases/download/${{ steps.version.outputs.version }}/vfrog-staging-darwin-arm64 -o vfrog-staging
+            curl -L https://github.com/vfrog-ai/vfrog-cli/releases/download/${{ steps.version.outputs.version }}/vfrog-staging-darwin-arm64 -o vfrog-staging
             chmod +x vfrog-staging && sudo mv vfrog-staging /usr/local/bin/
             ```
 
