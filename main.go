@@ -1,6 +1,6 @@
 package main
 
-import "github.com/vfrog/vfrog-cli/cmd"
+import "github.com/vfrog-ai/vfrog-cli/cmd"
 
 func main() {
 	cmd.Execute()

@@ -29,7 +29,7 @@ PROD_API_URL := https://api.vfrog.ai
 PROD_PLATFORM_HOST := https://platform.vfrog.ai
 
 # Base ldflags
-LDFLAGS := -s -w -X 'github.com/vfrog/vfrog-cli/internal/config.Version=$(VERSION)'
+LDFLAGS := -s -w -X 'github.com/vfrog-ai/vfrog-cli/internal/config.Version=$(VERSION)'
 
 # Default build (no credentials baked in)
 build:
@@ -38,36 +38,36 @@ build:
 # Build dev binary
 build-dev:
 	CGO_ENABLED=$(CGO_ENABLED) go build -ldflags "$(LDFLAGS) \
-		-X 'github.com/vfrog/vfrog-cli/internal/config.Environment=dev' \
-		-X 'github.com/vfrog/vfrog-cli/internal/config.DefaultSupabaseURL=$(DEV_SUPABASE_URL)' \
-		-X 'github.com/vfrog/vfrog-cli/internal/config.DefaultSupabasePublishableKey=$(DEV_SUPABASE_KEY)' \
-		-X 'github.com/vfrog/vfrog-cli/internal/config.DefaultAPIURL=$(DEV_API_URL)' \
-		-X 'github.com/vfrog/vfrog-cli/internal/config.DefaultAPIProjectBaseURL=$(DEV_API_URL)' \
-		-X 'github.com/vfrog/vfrog-cli/internal/config.DefaultPlatformHost=$(DEV_PLATFORM_HOST)'" \
+		-X 'github.com/vfrog-ai/vfrog-cli/internal/config.Environment=dev' \
+		-X 'github.com/vfrog-ai/vfrog-cli/internal/config.DefaultSupabaseURL=$(DEV_SUPABASE_URL)' \
+		-X 'github.com/vfrog-ai/vfrog-cli/internal/config.DefaultSupabasePublishableKey=$(DEV_SUPABASE_KEY)' \
+		-X 'github.com/vfrog-ai/vfrog-cli/internal/config.DefaultAPIURL=$(DEV_API_URL)' \
+		-X 'github.com/vfrog-ai/vfrog-cli/internal/config.DefaultAPIProjectBaseURL=$(DEV_API_URL)' \
+		-X 'github.com/vfrog-ai/vfrog-cli/internal/config.DefaultPlatformHost=$(DEV_PLATFORM_HOST)'" \
 		-o vfrog-dev ./main.go
 	@echo "Built vfrog-dev ($(VERSION))"
 
 # Build staging binary
 build-staging:
 	CGO_ENABLED=$(CGO_ENABLED) go build -ldflags "$(LDFLAGS) \
-		-X 'github.com/vfrog/vfrog-cli/internal/config.Environment=staging' \
-		-X 'github.com/vfrog/vfrog-cli/internal/config.DefaultSupabaseURL=$(STAGING_SUPABASE_URL)' \
-		-X 'github.com/vfrog/vfrog-cli/internal/config.DefaultSupabasePublishableKey=$(STAGING_SUPABASE_KEY)' \
-		-X 'github.com/vfrog/vfrog-cli/internal/config.DefaultAPIURL=$(STAGING_API_URL)' \
-		-X 'github.com/vfrog/vfrog-cli/internal/config.DefaultAPIProjectBaseURL=$(STAGING_API_URL)' \
-		-X 'github.com/vfrog/vfrog-cli/internal/config.DefaultPlatformHost=$(STAGING_PLATFORM_HOST)'" \
+		-X 'github.com/vfrog-ai/vfrog-cli/internal/config.Environment=staging' \
+		-X 'github.com/vfrog-ai/vfrog-cli/internal/config.DefaultSupabaseURL=$(STAGING_SUPABASE_URL)' \
+		-X 'github.com/vfrog-ai/vfrog-cli/internal/config.DefaultSupabasePublishableKey=$(STAGING_SUPABASE_KEY)' \
+		-X 'github.com/vfrog-ai/vfrog-cli/internal/config.DefaultAPIURL=$(STAGING_API_URL)' \
+		-X 'github.com/vfrog-ai/vfrog-cli/internal/config.DefaultAPIProjectBaseURL=$(STAGING_API_URL)' \
+		-X 'github.com/vfrog-ai/vfrog-cli/internal/config.DefaultPlatformHost=$(STAGING_PLATFORM_HOST)'" \
 		-o vfrog-staging ./main.go
 	@echo "Built vfrog-staging ($(VERSION))"
 
 # Build production binary
 build-prod:
 	CGO_ENABLED=$(CGO_ENABLED) go build -ldflags "$(LDFLAGS) \
-		-X 'github.com/vfrog/vfrog-cli/internal/config.Environment=production' \
-		-X 'github.com/vfrog/vfrog-cli/internal/config.DefaultSupabaseURL=$(PROD_SUPABASE_URL)' \
-		-X 'github.com/vfrog/vfrog-cli/internal/config.DefaultSupabasePublishableKey=$(PROD_SUPABASE_KEY)' \
-		-X 'github.com/vfrog/vfrog-cli/internal/config.DefaultAPIURL=$(PROD_API_URL)' \
-		-X 'github.com/vfrog/vfrog-cli/internal/config.DefaultAPIProjectBaseURL=$(PROD_API_URL)' \
-		-X 'github.com/vfrog/vfrog-cli/internal/config.DefaultPlatformHost=$(PROD_PLATFORM_HOST)'" \
+		-X 'github.com/vfrog-ai/vfrog-cli/internal/config.Environment=production' \
+		-X 'github.com/vfrog-ai/vfrog-cli/internal/config.DefaultSupabaseURL=$(PROD_SUPABASE_URL)' \
+		-X 'github.com/vfrog-ai/vfrog-cli/internal/config.DefaultSupabasePublishableKey=$(PROD_SUPABASE_KEY)' \
+		-X 'github.com/vfrog-ai/vfrog-cli/internal/config.DefaultAPIURL=$(PROD_API_URL)' \
+		-X 'github.com/vfrog-ai/vfrog-cli/internal/config.DefaultAPIProjectBaseURL=$(PROD_API_URL)' \
+		-X 'github.com/vfrog-ai/vfrog-cli/internal/config.DefaultPlatformHost=$(PROD_PLATFORM_HOST)'" \
 		-o vfrog ./main.go
 	@echo "Built vfrog (production) ($(VERSION))"
 
@@ -99,12 +99,12 @@ build-dev-gcp:
 # Build local binary (points to localhost services)
 build-local:
 	CGO_ENABLED=$(CGO_ENABLED) go build -ldflags "$(LDFLAGS) \
-		-X 'github.com/vfrog/vfrog-cli/internal/config.Environment=local' \
-		-X 'github.com/vfrog/vfrog-cli/internal/config.DefaultSupabaseURL=$(LOCAL_SUPABASE_URL)' \
-		-X 'github.com/vfrog/vfrog-cli/internal/config.DefaultSupabasePublishableKey=$(LOCAL_SUPABASE_KEY)' \
-		-X 'github.com/vfrog/vfrog-cli/internal/config.DefaultAPIURL=$(LOCAL_API_URL)' \
-		-X 'github.com/vfrog/vfrog-cli/internal/config.DefaultAPIProjectBaseURL=$(LOCAL_API_URL)' \
-		-X 'github.com/vfrog/vfrog-cli/internal/config.DefaultPlatformHost=$(LOCAL_PLATFORM_HOST)'" \
+		-X 'github.com/vfrog-ai/vfrog-cli/internal/config.Environment=local' \
+		-X 'github.com/vfrog-ai/vfrog-cli/internal/config.DefaultSupabaseURL=$(LOCAL_SUPABASE_URL)' \
+		-X 'github.com/vfrog-ai/vfrog-cli/internal/config.DefaultSupabasePublishableKey=$(LOCAL_SUPABASE_KEY)' \
+		-X 'github.com/vfrog-ai/vfrog-cli/internal/config.DefaultAPIURL=$(LOCAL_API_URL)' \
+		-X 'github.com/vfrog-ai/vfrog-cli/internal/config.DefaultAPIProjectBaseURL=$(LOCAL_API_URL)' \
+		-X 'github.com/vfrog-ai/vfrog-cli/internal/config.DefaultPlatformHost=$(LOCAL_PLATFORM_HOST)'" \
 		-o vfrog-local ./main.go
 	@echo "Built vfrog-local ($(VERSION))"
 	@echo "Configured to use:"

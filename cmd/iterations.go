@@ -8,12 +8,12 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/vfrog/vfrog-cli/internal/api/credits"
-	"github.com/vfrog/vfrog-cli/internal/api/supabase"
-	"github.com/vfrog/vfrog-cli/internal/api/vfrogapi"
-	"github.com/vfrog/vfrog-cli/internal/auth"
-	"github.com/vfrog/vfrog-cli/internal/config"
-	"github.com/vfrog/vfrog-cli/internal/output"
+	"github.com/vfrog-ai/vfrog-cli/internal/api/credits"
+	"github.com/vfrog-ai/vfrog-cli/internal/api/supabase"
+	"github.com/vfrog-ai/vfrog-cli/internal/api/vfrogapi"
+	"github.com/vfrog-ai/vfrog-cli/internal/auth"
+	"github.com/vfrog-ai/vfrog-cli/internal/config"
+	"github.com/vfrog-ai/vfrog-cli/internal/output"
 )
 
 // iterationsCmd represents the iterations command

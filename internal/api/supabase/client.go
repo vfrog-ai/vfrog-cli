@@ -9,8 +9,8 @@ import (
 	"net/url"
 	"time"
 
-	"github.com/vfrog/vfrog-cli/internal/auth"
-	"github.com/vfrog/vfrog-cli/internal/config"
+	"github.com/vfrog-ai/vfrog-cli/internal/auth"
+	"github.com/vfrog-ai/vfrog-cli/internal/config"
 )
 
 // Client represents a Supabase PostgREST client

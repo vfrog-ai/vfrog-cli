@@ -34,15 +34,15 @@ Download the appropriate binary for your platform and environment:
 
 ```bash
 # macOS (Apple Silicon)
-curl -L https://github.com/vfrog/vfrog-cli/releases/latest/download/vfrog-darwin-arm64 -o vfrog
+curl -L https://github.com/vfrog-ai/vfrog-cli/releases/latest/download/vfrog-darwin-arm64 -o vfrog
 chmod +x vfrog && sudo mv vfrog /usr/local/bin/
 
 # macOS (Intel)
-curl -L https://github.com/vfrog/vfrog-cli/releases/latest/download/vfrog-darwin-amd64 -o vfrog
+curl -L https://github.com/vfrog-ai/vfrog-cli/releases/latest/download/vfrog-darwin-amd64 -o vfrog
 chmod +x vfrog && sudo mv vfrog /usr/local/bin/
 
 # Linux (AMD64)
-curl -L https://github.com/vfrog/vfrog-cli/releases/latest/download/vfrog-linux-amd64 -o vfrog
+curl -L https://github.com/vfrog-ai/vfrog-cli/releases/latest/download/vfrog-linux-amd64 -o vfrog
 chmod +x vfrog && sudo mv vfrog /usr/local/bin/
 ```
 
@@ -50,7 +50,7 @@ chmod +x vfrog && sudo mv vfrog /usr/local/bin/
 
 ```bash
 # macOS (Apple Silicon)
-curl -L https://github.com/vfrog/vfrog-cli/releases/latest/download/vfrog-staging-darwin-arm64 -o vfrog-staging
+curl -L https://github.com/vfrog-ai/vfrog-cli/releases/latest/download/vfrog-staging-darwin-arm64 -o vfrog-staging
 chmod +x vfrog-staging && sudo mv vfrog-staging /usr/local/bin/
 ```
 
@@ -58,7 +58,7 @@ chmod +x vfrog-staging && sudo mv vfrog-staging /usr/local/bin/
 
 ```bash
 # macOS (Apple Silicon)
-curl -L https://github.com/vfrog/vfrog-cli/releases/latest/download/vfrog-dev-darwin-arm64 -o vfrog-dev
+curl -L https://github.com/vfrog-ai/vfrog-cli/releases/latest/download/vfrog-dev-darwin-arm64 -o vfrog-dev
 chmod +x vfrog-dev && sudo mv vfrog-dev /usr/local/bin/
 ```
 
@@ -603,7 +603,7 @@ vfrog --<TAB>            # Shows global flags
 
 ```bash
 # Download the binary
-curl -L https://github.com/vfrog/vfrog-cli/releases/latest/download/vfrog-linux-amd64 -o vfrog
+curl -L https://github.com/vfrog-ai/vfrog-cli/releases/latest/download/vfrog-linux-amd64 -o vfrog
 chmod +x vfrog
 
 # Authenticate
@@ -675,14 +675,14 @@ go version   # should show go1.22 or later
 ### Building from Source
 
 ```bash
-git clone https://github.com/vfrog/vfrog-cli.git
+git clone https://github.com/vfrog-ai/vfrog-cli.git
 cd vfrog-cli
 go build -o vfrog ./main.go
 ```
 
 On Windows (PowerShell):
 ```powershell
-git clone https://github.com/vfrog/vfrog-cli.git
+git clone https://github.com/vfrog-ai/vfrog-cli.git
 cd vfrog-cli
 go build -o vfrog.exe ./main.go
 ```
@@ -721,8 +721,8 @@ make clean          # remove build artifacts
 ### Building with Custom Credentials
 
 ```bash
-LDFLAGS="-X 'github.com/vfrog/vfrog-cli/internal/config.DefaultSupabaseURL=https://your.supabase.co'"
-LDFLAGS="${LDFLAGS} -X 'github.com/vfrog/vfrog-cli/internal/config.DefaultSupabasePublishableKey=your-key'"
+LDFLAGS="-X 'github.com/vfrog-ai/vfrog-cli/internal/config.DefaultSupabaseURL=https://your.supabase.co'"
+LDFLAGS="${LDFLAGS} -X 'github.com/vfrog-ai/vfrog-cli/internal/config.DefaultSupabasePublishableKey=your-key'"
 go build -ldflags "${LDFLAGS}" -o vfrog ./main.go
 ```
 

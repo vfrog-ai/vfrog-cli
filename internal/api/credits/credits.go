@@ -9,8 +9,8 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/vfrog/vfrog-cli/internal/auth"
-	"github.com/vfrog/vfrog-cli/internal/config"
+	"github.com/vfrog-ai/vfrog-cli/internal/auth"
+	"github.com/vfrog-ai/vfrog-cli/internal/config"
 )
 
 // ErrInsufficientCredits is returned when the organisation doesn't have enough credits.

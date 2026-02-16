@@ -12,11 +12,11 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/vfrog/vfrog-cli/internal/api/storage"
-	"github.com/vfrog/vfrog-cli/internal/api/supabase"
-	"github.com/vfrog/vfrog-cli/internal/auth"
-	"github.com/vfrog/vfrog-cli/internal/config"
-	"github.com/vfrog/vfrog-cli/internal/output"
+	"github.com/vfrog-ai/vfrog-cli/internal/api/storage"
+	"github.com/vfrog-ai/vfrog-cli/internal/api/supabase"
+	"github.com/vfrog-ai/vfrog-cli/internal/auth"
+	"github.com/vfrog-ai/vfrog-cli/internal/config"
+	"github.com/vfrog-ai/vfrog-cli/internal/output"
 )
 
 // datasetImagesCmd represents the dataset_images command
