@@ -142,6 +142,8 @@ vfrog config set organisation --organisation_id <org_id>
 
 > All subsequent commands use this organisation. Changing the organisation automatically clears the active project.
 
+The CLI detects your plan type when setting the organisation. FREE plan users have access to manual annotation and export, but AI features (SSAT, training) require a paid plan. Run `vfrog config show` to see your current plan type.
+
 ### Step 3: Create a Project
 
 Projects are containers for your dataset images, objects, and iterations:
@@ -306,6 +308,20 @@ Submit SSAT control feedback for quality assessment:
 vfrog iterations control --iteration_id <id>
 ```
 
+#### Manual Annotation
+
+Open the platform annotation page to manually annotate dataset images (available on all plans including FREE):
+
+```bash
+# Open manual annotation by iteration ID
+vfrog iterations manual --iteration_id <id>
+
+# Open by iteration number
+vfrog iterations manual --iteration_number 1
+```
+
+This prints the annotation URL and opens it in your default browser.
+
 #### Review in HALO
 
 Open the HALO (Human Assisted Labelling of Objects) web UI to review and correct annotations:
@@ -314,8 +330,6 @@ Open the HALO (Human Assisted Labelling of Objects) web UI to review and correct
 # Print the HALO URL
 vfrog iterations halo --iteration_id <id>
 ```
-
-
 
 ### Step 7: Review Annotations
 
@@ -491,6 +505,7 @@ The JSON file contains full annotation arrays with bounding box coordinates, dat
 |---------|-------------|
 | `vfrog login` | Authenticate with the platform |
 | `vfrog version` | Print CLI version and environment |
+| `vfrog config show` | Show current configuration and plan type |
 | `vfrog config set organisation` | Set default organisation |
 | `vfrog config set project` | Set default project |
 | `vfrog config set object` | Set default object |
@@ -513,11 +528,12 @@ The JSON file contains full annotation arrays with bounding box coordinates, dat
 | `vfrog iterations list` | List iterations |
 | `vfrog iterations create` | Create a new iteration |
 | `vfrog iterations delete` | Delete an iteration |
-| `vfrog iterations ssat` | Start SSAT annotation |
+| `vfrog iterations ssat` | Start SSAT annotation (paid plans only) |
 | `vfrog iterations status` | Check iteration status |
 | `vfrog iterations annotations` | View iteration annotations |
 | `vfrog iterations control` | Submit SSAT control feedback |
-| `vfrog iterations train` | Train a model |
+| `vfrog iterations manual` | Open manual annotation page |
+| `vfrog iterations train` | Train a model (paid plans only) |
 | `vfrog iterations deploy` | Deploy trained model to production |
 | `vfrog iterations halo` | Get HALO review URL |
 | `vfrog iterations next` | Create next iteration |

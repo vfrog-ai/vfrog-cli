@@ -61,6 +61,7 @@ var configShowCmd = &cobra.Command{
 			"version":         version,
 			"environment":     env,
 			"organisation_id": cfg.OrganisationID,
+			"plan_type":       cfg.PlanType,
 			"project_id":      cfg.ProjectID,
 			"object_id":       cfg.ObjectID,
 			"supabase_url":    cfg.SupabaseURL,
@@ -76,6 +77,7 @@ var configShowCmd = &cobra.Command{
 		fmt.Printf("Version:         %s\n", version)
 		fmt.Printf("Environment:     %s\n", env)
 		fmt.Printf("Organisation ID: %s\n", cfg.OrganisationID)
+		fmt.Printf("Plan Type:       %s\n", cfg.PlanType)
 		fmt.Printf("Project ID:      %s\n", cfg.ProjectID)
 		fmt.Printf("Object ID:       %s\n", cfg.ObjectID)
 		fmt.Printf("Supabase URL:    %s\n", cfg.SupabaseURL)
@@ -121,7 +123,7 @@ var configSetOrganisationCmd = &cobra.Command{
 		// Check if user has access to this organisation via organisation_user
 		orgUsers, err := client.Get("organisation_user", map[string]string{
 			"organisation_id": fmt.Sprintf("eq.%s", orgID),
-			"select":          "organisation_id,organisation:organisation_id(id,name)",
+			"select":          "organisation_id,organisation:organisation_id(id,name,plan:plan_id(type))",
 		})
 		if err != nil {
 			return fmt.Errorf("failed to verify organisation: %w", err)
@@ -131,15 +133,21 @@ var configSetOrganisationCmd = &cobra.Command{
 			return fmt.Errorf("organisation not found or you don't have access: %s", orgID)
 		}
 
-		// Get the organisation name for confirmation
+		// Get the organisation name and plan type for confirmation
 		var orgName string
+		var planType string
 		if org, ok := orgUsers[0]["organisation"].(map[string]interface{}); ok {
 			if name, ok := org["name"].(string); ok {
 				orgName = name
 			}
+			if plan, ok := org["plan"].(map[string]interface{}); ok {
+				if t, ok := plan["type"].(string); ok {
+					planType = t
+				}
+			}
 		}
 
-		if err := cfg.SetOrganisationID(orgID); err != nil {
+		if err := cfg.SetOrganisationIDWithPlan(orgID, planType); err != nil {
 			return fmt.Errorf("failed to set organisation_id: %w", err)
 		}
 
@@ -147,11 +155,19 @@ var configSetOrganisationCmd = &cobra.Command{
 			return output.PrintJSON(map[string]string{
 				"organisation_id":   orgID,
 				"organisation_name": orgName,
+				"plan_type":         planType,
 				"status":            "success",
 			})
 		}
 
-		output.PrintSuccess(fmt.Sprintf("Set organisation to: %s (%s)", orgName, orgID))
+		planLabel := planType
+		if planLabel == "" {
+			planLabel = "unknown"
+		}
+		output.PrintSuccess(fmt.Sprintf("Set organisation to: %s (%s plan)", orgName, planLabel))
+		if cfg.IsFreePlan() {
+			fmt.Println("Note: You are on the FREE plan. AI features (SSAT, training) require a paid plan.")
+		}
 		return nil
 	},
 }

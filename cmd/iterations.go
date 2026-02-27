@@ -4,6 +4,8 @@ import (
 	"errors"
 	"fmt"
 	"math/rand"
+	"os/exec"
+	"runtime"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -258,6 +260,10 @@ The iteration must be in 'created' status to start SSAT.`,
 
 		if err := cfg.RequireProjectID(); err != nil {
 			return err
+		}
+
+		if cfg.IsFreePlan() {
+			return cfg.FreePlanError("SSAT annotation")
 		}
 
 		client, err := supabase.NewClient(cfg)
@@ -551,6 +557,10 @@ var iterationTrainCmd = &cobra.Command{
 
 		if err := cfg.RequireOrganisationID(); err != nil {
 			return err
+		}
+
+		if cfg.IsFreePlan() {
+			return cfg.FreePlanError("Model training")
 		}
 
 		// Get access token (requires login)
@@ -1693,6 +1703,87 @@ Example:
 	},
 }
 
+// iterationsManualCmd opens the manual annotation page for an iteration
+var iterationsManualCmd = &cobra.Command{
+	Use:   "manual",
+	Short: "Open manual annotation for an iteration",
+	Long:  `Opens the platform annotation page for the given iteration so you can manually annotate dataset images.`,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		cfg, err := config.Load()
+		if err != nil {
+			return fmt.Errorf("failed to load config: %w", err)
+		}
+
+		if err := cfg.RequireProjectID(); err != nil {
+			return err
+		}
+
+		if err := cfg.RequireOrganisationID(); err != nil {
+			return err
+		}
+
+		client, err := supabase.NewClient(cfg)
+		if err != nil {
+			return fmt.Errorf("failed to create Supabase client: %w", err)
+		}
+
+		iterationID, err := getIterationID(cmd, cfg, client)
+		if err != nil {
+			return err
+		}
+
+		// Fetch iteration to get the product_image_id
+		iterations, err := client.Get("project_iteration", map[string]string{
+			"id":     fmt.Sprintf("eq.%s", iterationID),
+			"select": "id,product_image_id",
+		})
+		if err != nil {
+			return fmt.Errorf("failed to get iteration: %w", err)
+		}
+		if len(iterations) == 0 {
+			return fmt.Errorf("iteration not found: %s", iterationID)
+		}
+
+		productImageID, ok := iterations[0]["product_image_id"].(string)
+		if !ok || productImageID == "" {
+			return fmt.Errorf("iteration has no product image linked")
+		}
+
+		host := cfg.PlatformHost
+		if host == "" {
+			host = config.DefaultPlatformHost
+		}
+
+		annotateURL := fmt.Sprintf("%s/org/%s/proj/%s/prod/%s/iter/%s/annotate",
+			host, cfg.OrganisationID, cfg.ProjectID, productImageID, iterationID)
+
+		if jsonOutput {
+			return output.PrintJSON(map[string]string{
+				"url":    annotateURL,
+				"status": "success",
+			})
+		}
+
+		fmt.Println(annotateURL)
+
+		// Try to open the URL in the default browser
+		var openErr error
+		switch runtime.GOOS {
+		case "windows":
+			openErr = exec.Command("cmd", "/c", "start", annotateURL).Start()
+		case "darwin":
+			openErr = exec.Command("open", annotateURL).Start()
+		default:
+			openErr = exec.Command("xdg-open", annotateURL).Start()
+		}
+		if openErr != nil {
+			fmt.Println("Could not open browser automatically. Please open the URL above.")
+		}
+
+		return nil
+	},
+}
+
 func init() {
 	rootCmd.AddCommand(iterationsCmd)
 	iterationsCmd.AddCommand(iterationsListCmd)
@@ -1707,6 +1798,7 @@ func init() {
 	iterationsCmd.AddCommand(iterationsStatusCmd)
 	iterationsCmd.AddCommand(iterationsControlCmd)
 	iterationsCmd.AddCommand(iterationsDeployCmd)
+	iterationsCmd.AddCommand(iterationsManualCmd)
 
 	// Hidden alias: "vfrog iteration train" still works for backward compat
 	iterationAliasCmd := &cobra.Command{Use: "iteration", Hidden: true}
@@ -1759,4 +1851,7 @@ func init() {
 	iterationsDeployCmd.Flags().String("iteration_id", "", "Iteration ID to deploy")
 	iterationsDeployCmd.Flags().Int("iteration_number", 0, "Iteration number (uses object_id from config if not provided)")
 	iterationsDeployCmd.Flags().String("object_id", "", "Object (product image) ID (uses config value if not provided)")
+	iterationsManualCmd.Flags().String("iteration_id", "", "Iteration ID")
+	iterationsManualCmd.Flags().Int("iteration_number", 0, "Iteration number (uses object_id from config if not provided)")
+	iterationsManualCmd.Flags().String("object_id", "", "Object (product image) ID (uses config value if not provided)")
 }

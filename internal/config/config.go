@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 )
@@ -56,6 +57,7 @@ type Config struct {
 	APIURL            string `json:"api_url,omitempty"`
 	APIProjectBaseURL string `json:"api_project_base_url,omitempty"`
 	PlatformHost           string `json:"platform_host,omitempty"`
+	PlanType               string `json:"plan_type,omitempty"`
 	APIKey                 string `json:"api_key,omitempty"`
 	Auth                   *Auth  `json:"auth,omitempty"`
 }
@@ -166,6 +168,34 @@ func (c *Config) SetOrganisationID(orgID string) error {
 	}
 	
 	return Save(c)
+}
+
+// SetOrganisationIDWithPlan sets the organisation ID and plan type, clearing project ID if org changes
+func (c *Config) SetOrganisationIDWithPlan(orgID, planType string) error {
+	oldOrgID := c.OrganisationID
+	c.OrganisationID = orgID
+	c.PlanType = planType
+
+	// If organisation changed, clear project_id
+	if oldOrgID != "" && oldOrgID != orgID {
+		c.ProjectID = ""
+	}
+
+	return Save(c)
+}
+
+// IsFreePlan returns true if the cached plan type is FREE
+func (c *Config) IsFreePlan() bool {
+	return strings.EqualFold(c.PlanType, "FREE")
+}
+
+// FreePlanError returns an error indicating a feature requires a paid plan
+func (c *Config) FreePlanError(feature string) error {
+	host := c.PlatformHost
+	if host == "" {
+		host = DefaultPlatformHost
+	}
+	return fmt.Errorf("%s requires a paid plan. You are on the FREE plan.\nUpgrade at: %s/billing", feature, host)
 }
 
 // SetProjectID sets the project ID and clears object_id if project changes
