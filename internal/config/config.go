@@ -195,7 +195,7 @@ func (c *Config) FreePlanError(feature string) error {
 	if host == "" {
 		host = DefaultPlatformHost
 	}
-	return fmt.Errorf("%s requires a paid plan. You are on the FREE plan.\nUpgrade at: %s/billing", feature, host)
+	return fmt.Errorf("%s requires a paid plan. You are on the FREE plan.\nUse 'vfrog iterations manual' to annotate manually on the FREE plan.\nUpgrade at: %s/billing", feature, host)
 }
 
 // SetProjectID sets the project ID and clears object_id if project changes

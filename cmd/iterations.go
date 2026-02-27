@@ -1316,6 +1316,10 @@ Example:
 			return err
 		}
 
+		if cfg.IsFreePlan() {
+			return cfg.FreePlanError("SSAT control")
+		}
+
 		client, err := supabase.NewClient(cfg)
 		if err != nil {
 			return fmt.Errorf("failed to create Supabase client: %w", err)
@@ -1412,6 +1416,10 @@ The new iteration will have:
 			return fmt.Errorf("failed to load config: %w", err)
 		}
 
+		if cfg.IsFreePlan() {
+			return cfg.FreePlanError("Next iteration")
+		}
+
 		client, err := supabase.NewClient(cfg)
 		if err != nil {
 			return fmt.Errorf("failed to create Supabase client: %w", err)
@@ -1471,6 +1479,10 @@ For iteration #2+: Recreates with ssat_model_id from the previous iteration's mo
 		cfg, err := config.Load()
 		if err != nil {
 			return fmt.Errorf("failed to load config: %w", err)
+		}
+
+		if cfg.IsFreePlan() {
+			return cfg.FreePlanError("Iteration restart")
 		}
 
 		client, err := supabase.NewClient(cfg)
@@ -1553,6 +1565,10 @@ Example:
 
 		if err := cfg.RequireOrganisationID(); err != nil {
 			return err
+		}
+
+		if cfg.IsFreePlan() {
+			return cfg.FreePlanError("Model deployment")
 		}
 
 		client, err := supabase.NewClient(cfg)

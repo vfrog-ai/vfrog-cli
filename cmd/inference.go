@@ -41,6 +41,10 @@ Or run directly for single image inference:
 			return fmt.Errorf("failed to load config: %w", err)
 		}
 
+		if cfg.IsFreePlan() {
+			return cfg.FreePlanError("Inference")
+		}
+
 		client, err := vfrogapi.NewClient(cfg, inferenceAPIKey)
 		if err != nil {
 			return fmt.Errorf("failed to create API client: %w", err)
@@ -119,6 +123,10 @@ Example:
 		cfg, err := config.Load()
 		if err != nil {
 			return fmt.Errorf("failed to load config: %w", err)
+		}
+
+		if cfg.IsFreePlan() {
+			return cfg.FreePlanError("Batch inference")
 		}
 
 		client, err := vfrogapi.NewClient(cfg, apiKey)
